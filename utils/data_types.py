@@ -52,6 +52,7 @@ class ArmConfig:
     # 제어 관련
     max_velocity: float = 1.0
     max_acceleration: float = 2.0
+    driver_min_freq: float = 5.0  # 하드웨어가 지원하는 최소 제어 주파수(Hz)
 
 
 @dataclass
@@ -70,6 +71,13 @@ class SystemConfig:
     # 실행 설정
     control_frequency: float = 10.0  # Hz
     safety_timeout: float = 1.0  # seconds
+
+
+@dataclass
+class RobotControllerConfig:
+    """로봇 제어기 설정 (실제 제어 주파수 등)"""
+    arms: Dict[str, ArmConfig]
+    control_frequency: float = 20.0  # 실제 사용할 제어 주파수(Hz)
 
 
 class RobotData:

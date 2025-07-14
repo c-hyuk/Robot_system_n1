@@ -45,7 +45,7 @@ class DualPiperGR00TInterface:
         """
         self.model_path = model_path
         self.embodiment_name = embodiment_name
-        self.device = device
+        self.device = torch.device(device if torch.cuda.is_available() and device == "cuda" else "cpu")
         self.use_mock_data = use_mock_data
         
         # 로깅 설정
@@ -96,7 +96,7 @@ class DualPiperGR00TInterface:
                 modality_config=self.modality_config,
                 modality_transform=self.modality_transform,
                 denoising_steps=denoising_steps,
-                device=self.device
+                device=str(self.device)
             )
             
             self.logger.info("GR00T policy initialized successfully")
@@ -166,7 +166,7 @@ class DualPiperGR00TInterface:
             self.logger.error(f"Action prediction failed: {e}")
             return self._get_safe_action()
     
-    def get_action_from_pipeline(self) -> Optional[Dict[str, Any]]:
+    def get_action_from_pipeline(self) -> Dict[str, Any]:
         """
         데이터 파이프라인으로부터 액션 예측
         
@@ -175,43 +175,48 @@ class DualPiperGR00TInterface:
         """
         if self.data_pipeline is None:
             self.logger.error("Data pipeline not started")
-            return None
-        
-        # 파이프라인에서 GR00T 입력 데이터 수집
+            return self._get_safe_action()
         gr00t_input = self.data_pipeline.get_gr00t_input()
         if gr00t_input is None:
             self.logger.warning("No data from pipeline")
-            return None
-        
-        # 액션 예측
+            return self._get_safe_action()
         return self.get_action_from_observations(gr00t_input)
     
     def _postprocess_action(self, action_dict: Dict[str, Any]) -> Dict[str, Any]:
         """액션 후처리"""
-        processed = {}
-        
-        for key, value in action_dict.items():
+        def process_value(value):
             if isinstance(value, torch.Tensor):
-                # Tensor를 numpy로 변환
-                processed[key] = value.detach().cpu().numpy()
+                if value.dtype == torch.bool:
+                    value = value.float()
+                return value.detach().cpu().numpy()
+            elif isinstance(value, np.ndarray):
+                return value
+            elif isinstance(value, dict):
+                return {k: process_value(v) for k, v in value.items()}
+            elif isinstance(value, list):
+                return [process_value(v) for v in value]
             else:
-                processed[key] = value
-        
-        return processed
+                try:
+                    return np.array(value)
+                except Exception:
+                    return str(value)
+        return {k: process_value(v) for k, v in action_dict.items()}
     
     def _get_safe_action(self) -> Dict[str, Any]:
         """안전한 기본 액션 (에러 시 사용)"""
         # 모든 관절과 엔드이펙터를 현재 위치로 유지
         safe_action = {}
-        
-        for action_key in self.data_config.action_keys:
+        action_keys = getattr(self.data_config, "action_keys", [
+            "action.left_arm_joint_position",
+            "action.right_arm_joint_position",
+            "action.left_effector_position",
+            "action.right_effector_position"
+        ])
+        for action_key in action_keys:
             if "joint_position" in action_key:
-                # 7 DOF 관절
                 safe_action[action_key] = np.zeros(7, dtype=np.float32)
             elif "effector_position" in action_key:
-                # 6 DOF 엔드이펙터 (위치 + 자세)
                 safe_action[action_key] = np.zeros(6, dtype=np.float32)
-        
         return safe_action
     
     def set_training_mode(self, training: bool = True):
@@ -271,13 +276,10 @@ class DualPiperGR00TInterface:
         """관찰 데이터 유효성 검증"""
         try:
             # 필수 키 확인
-            expected_keys = set()
-            for modality_key in self.modality_config.keys():
-                if modality_key in observations:
-                    expected_keys.add(modality_key)
-            
-            if len(expected_keys) == 0:
-                self.logger.error("No valid modality keys found in observations")
+            required = set(self.modality_config.keys())
+            if not required.issubset(observations):
+                missing = required - set(observations)
+                self.logger.error(f"Missing required keys: {missing}")
                 return False
             
             # 데이터 타입 및 크기 확인
@@ -351,7 +353,7 @@ def test_gr00t_interface():
         # Mock 관찰 데이터 생성
         mock_observations = {
             'video': np.random.randint(0, 255, (1, 3, 224, 224), dtype=np.uint8),
-            'state': np.random.uniform(-1, 1, (1, 64), dtype=np.float32),
+            'state': np.random.uniform(-1, 1, (1, 64)).astype(np.float32),
             'language': "Pick up the red cube"
         }
         

@@ -10,16 +10,27 @@ from typing import Dict, Optional, List, Any
 from abc import ABC, abstractmethod
 import numpy as np
 import logging
+import argparse
 
 from utils.data_types import ArmConfig, StateData
 from config.hardware_config import get_hardware_config
+
+# Piper SDK imports (실제 환경에서 사용)
+try:
+    from piper_sdk.interface.piper_interface_v2 import C_PiperInterface_V2
+    from piper_sdk.interface.piper_interface import C_PiperInterface
+    PIPER_SDK_AVAILABLE = True
+except ImportError:
+    PIPER_SDK_AVAILABLE = False
+    print("Warning: Piper SDK not available, using mock data")
 
 
 class BaseRobotStateCollector(ABC):
     """로봇 상태 수집기 기본 클래스"""
     
-    def __init__(self, arm_config: ArmConfig):
+    def __init__(self, arm_config: ArmConfig, control_frequency: float = 10.0):
         self.config = arm_config
+        self.control_frequency = control_frequency
         self.is_running = False
         self.collection_thread = None
         self.data_queue = queue.Queue(maxsize=50)  # 상태 데이터는 비디오보다 작으므로 더 큰 버퍼
@@ -84,120 +95,88 @@ class BaseRobotStateCollector(ABC):
         self.logger.info(f"Stopped state collection: {self.config.name}")
     
     def _collection_loop(self) -> None:
-        """상태 수집 루프 (별도 스레드에서 실행)"""
-        # 10Hz로 상태 수집 (100ms 간격)
-        target_interval = 0.1
+        """데이터 수집 루프"""
+        self.logger.info(f"State collection loop started for {self.config.name}")
         
         while self.is_running:
-            loop_start = time.time()
-            
             try:
-                state_data = self._collect_state()
-                if state_data is not None:
-                    self._process_and_queue_state(state_data)
-                    self.sample_count += 1
-                else:
-                    self.logger.warning("Failed to collect robot state")
+                start_time = time.time()
+                
+                # 관절 위치 읽기
+                joint_positions = self._read_joint_positions()
+                if joint_positions is None:
+                    time.sleep(0.01)  # 실패 시 잠시 대기
+                    continue
+                
+                # 엔드이펙터 포즈 읽기
+                effector_pose = self._read_effector_pose()
+                if effector_pose is None:
                     time.sleep(0.01)
-                    
+                    continue
+                
+                # StateData 객체 생성
+                current_time = time.time()
+                state_data = {
+                    "timestamp": current_time,
+                    "joint_positions": joint_positions,
+                    "effector_pose": effector_pose,
+                    "arm_name": self.config.name
+                }
+                
+                # 큐에 데이터 저장 (큐가 가득 찬 경우 오래된 데이터 제거)
+                try:
+                    self.data_queue.put_nowait(state_data)
+                except queue.Full:
+                    try:
+                        self.data_queue.get_nowait()  # 오래된 데이터 제거
+                        self.data_queue.put_nowait(state_data)
+                    except queue.Empty:
+                        pass
+                
+                self.last_state = state_data
+                self.sample_count += 1
+                
+                # 타겟 주파수 유지 (기본 100Hz)
+                target_interval = 1.0 / self.control_frequency
+                elapsed = time.time() - start_time
+                sleep_time = target_interval - elapsed
+                
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                
             except Exception as e:
                 self.logger.error(f"Error in collection loop: {e}")
-                time.sleep(0.1)
-            
-            # 주파수 조절
-            elapsed = time.time() - loop_start
-            sleep_time = max(0, target_interval - elapsed)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
+                time.sleep(0.1)  # 에러 시 잠시 대기
     
-    def _collect_state(self) -> Optional[Dict[str, np.ndarray]]:
-        """로봇 상태 수집"""
-        joint_positions = self._read_joint_positions()
-        effector_pose = self._read_effector_pose()
-        
-        if joint_positions is None or effector_pose is None:
-            return None
-        
-        return {
-            'joint_positions': joint_positions,
-            'effector_pose': effector_pose
-        }
+    def get_latest_state(self) -> Optional[StateData]:
+        """최신 상태 데이터 반환"""
+        return self.last_state
     
-    def _process_and_queue_state(self, state_data: Dict[str, np.ndarray]) -> None:
-        """상태 데이터 처리 및 큐에 추가"""
-        timestamp = time.time()
-        
-        # 데이터 검증
-        if not self._validate_state_data(state_data):
-            self.logger.warning("Invalid state data, skipping")
-            return
-        
-        processed_state = {
-            'joint_positions': state_data['joint_positions'],
-            'effector_pose': state_data['effector_pose'],
-            'timestamp': timestamp,
-            'sample_id': self.sample_count
-        }
-        
-        # 큐에 추가
-        try:
-            self.data_queue.put_nowait(processed_state)
-            self.last_state = processed_state
-        except queue.Full:
+    def get_all_queued_states(self) -> List[StateData]:
+        """큐에 있는 모든 상태 데이터 반환"""
+        states = []
+        while not self.data_queue.empty():
             try:
-                self.data_queue.get_nowait()  # 오래된 데이터 제거
-                self.data_queue.put_nowait(processed_state)
-                self.last_state = processed_state
+                state = self.data_queue.get_nowait()
+                states.append(state)
             except queue.Empty:
-                pass
+                break
+        return states
     
-    def _validate_state_data(self, state_data: Dict[str, np.ndarray]) -> bool:
-        """상태 데이터 검증"""
-        try:
-            joint_pos = state_data['joint_positions']
-            effector_pose = state_data['effector_pose']
-            
-            # 크기 검증
-            if joint_pos.shape[0] != self.config.dof:
-                self.logger.error(f"Joint positions size mismatch: expected {self.config.dof}, got {joint_pos.shape[0]}")
-                return False
-            d
-            if effector_pose.shape[0] != self.config.effector_dof:
-                self.logger.error(f"Effector pose size mismatch: expected {self.config.effector_dof}, got {effector_pose.shape[0]}")
-                return False
-            
-            # 값 범위 검증 (관절 제한)
-            if self.config.joint_limits:
-                for i, (joint_name, (min_val, max_val)) in enumerate(self.config.joint_limits.items()):
-                    if i < len(joint_pos):
-                        if not (min_val <= joint_pos[i] <= max_val):
-                            self.logger.warning(f"Joint {joint_name} out of limits: {joint_pos[i]} not in [{min_val}, {max_val}]")
-            
-            # NaN/Inf 검증
-            if np.any(np.isnan(joint_pos)) or np.any(np.isinf(joint_pos)):
-                self.logger.error("Invalid joint position values (NaN/Inf)")
-                return False
-            
-            if np.any(np.isnan(effector_pose)) or np.any(np.isinf(effector_pose)):
-                self.logger.error("Invalid effector pose values (NaN/Inf)")
-                return False
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error validating state data: {e}")
-            return False
+    def get_status(self) -> Dict[str, Any]:
+        """수집기 상태 반환"""
+        return {
+            'name': self.config.name,
+            'is_running': self.is_running,
+            'sample_count': self.sample_count,
+            'queue_size': self.data_queue.qsize(),
+            'last_update': self.last_state["timestamp"] if self.last_state else None,
+            'sampling_rate': self.get_sampling_rate()
+        }
     
-    def get_latest_state(self) -> Optional[Dict[str, Any]]:
-        """최신 상태 반환"""
-        try:
-            return self.data_queue.get_nowait()
-        except queue.Empty:
-            return self.last_state
-    
-    def get_collection_rate(self) -> float:
-        """현재 수집 주파수 계산"""
-        if self.start_time is None or self.sample_count == 0:
+    def get_sampling_rate(self) -> float:
+        """현재 샘플링 레이트 반환"""
+        if not self.start_time:
             return 0.0
         
         elapsed = time.time() - self.start_time
@@ -207,8 +186,8 @@ class BaseRobotStateCollector(ABC):
 class MockRobotStateCollector(BaseRobotStateCollector):
     """Mock 로봇 상태 수집기 (테스트용)"""
     
-    def __init__(self, arm_config: ArmConfig):
-        super().__init__(arm_config)
+    def __init__(self, arm_config: ArmConfig, control_frequency: float = 10.0):
+        super().__init__(arm_config, control_frequency)
         self.time_offset = np.random.random() * 2 * np.pi  # 각 팔마다 다른 움직임
         
     def _initialize_robot(self) -> bool:
@@ -259,74 +238,260 @@ class MockRobotStateCollector(BaseRobotStateCollector):
 class PiperRobotStateCollector(BaseRobotStateCollector):
     """Piper 로봇 상태 수집기 (실제 하드웨어용)"""
     
-    def __init__(self, arm_config: ArmConfig):
-        super().__init__(arm_config)
+    def __init__(self, arm_config: ArmConfig, control_frequency: float = 10.0):
+        super().__init__(arm_config, control_frequency)
         self.robot_connection = None
-        # TODO: Piper 로봇 SDK import 및 초기화
-    
+        self.can_port = getattr(arm_config, 'can_port', 'can0')  # CAN 포트 (기본값: can0)
+        self.use_v2_interface = getattr(arm_config, 'use_v2_interface', True)  # V2 인터페이스 사용 여부
+        self.connection_timeout = 5.0  # 연결 타임아웃
+        self.last_joint_data = None
+        self.last_pose_data = None
+        
     def _initialize_robot(self) -> bool:
         """Piper 로봇 연결 초기화"""
+        if not PIPER_SDK_AVAILABLE:
+            self.logger.warning("Piper SDK not available, using mock data")
+            return self._initialize_mock_robot()
+        
         try:
-            # TODO: 실제 Piper 로봇 SDK 사용
-            # 예시:
-            # import piper_robot_sdk as piper
-            # self.robot_connection = piper.connect(self.config.name)
-            # return self.robot_connection.is_connected()
+            # Piper SDK 버전에 따라 적절한 인터페이스 선택
+            if self.use_v2_interface:
+                self.robot_connection = C_PiperInterface_V2(
+                    can_name=self.can_port,
+                    judge_flag=True,
+                    can_auto_init=True,
+                    start_sdk_joint_limit=True,
+                    start_sdk_gripper_limit=True
+                )
+            else:
+                self.robot_connection = C_PiperInterface(
+                    can_name=self.can_port,
+                    judge_flag=True,
+                    can_auto_init=True,
+                    start_sdk_joint_limit=True,
+                    start_sdk_gripper_limit=True
+                )
             
-            self.logger.info("Piper robot connection initialized (TODO: implement actual SDK)")
+            # 로봇 연결
+            connect_result = self.robot_connection.ConnectPort(
+                can_init=True,
+                piper_init=True,
+                start_thread=True
+            )
+            
+            if not connect_result:
+                self.logger.error("Failed to connect to Piper robot")
+                return False
+            
+            # 연결 확인 (타임아웃 적용)
+            start_time = time.time()
+            while time.time() - start_time < self.connection_timeout:
+                if self.robot_connection.get_connect_status():
+                    break
+                time.sleep(0.1)
+            else:
+                self.logger.error("Connection timeout")
+                return False
+            
+            # 로봇이 정상적으로 응답하는지 확인
+            if not self._wait_for_robot_ready():
+                self.logger.error("Robot not ready")
+                return False
+            
+            self.logger.info(f"Piper robot connected successfully on {self.can_port}")
             return True
             
         except Exception as e:
             self.logger.error(f"Failed to initialize Piper robot: {e}")
             return False
     
+    def _initialize_mock_robot(self) -> bool:
+        """SDK가 없을 때 Mock 초기화"""
+        self.logger.info("Using mock Piper robot data")
+        return True
+    
+    def _wait_for_robot_ready(self, timeout: float = 3.0) -> bool:
+        """로봇이 준비될 때까지 대기"""
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout:
+            try:
+                if self.robot_connection is not None and self.robot_connection.isOk():
+                    # 첫 번째 관절 데이터를 받을 때까지 대기
+                    joint_data = self.robot_connection.GetArmJointFeedBack()
+                    if joint_data and joint_data.time_stamp > 0:
+                        self.logger.info("Robot is ready and sending data")
+                        return True
+                time.sleep(0.1)
+            except Exception as e:
+                self.logger.warning(f"Waiting for robot ready: {e}")
+                time.sleep(0.1)
+        
+        return False
+    
     def _read_joint_positions(self) -> Optional[np.ndarray]:
         """Piper 로봇 관절 위치 읽기"""
+        if not PIPER_SDK_AVAILABLE or not self.robot_connection:
+            return self._read_mock_joint_positions()
+        
         try:
-            # TODO: 실제 Piper 로봇 SDK 사용
-            # 예시:
-            # joint_states = self.robot_connection.get_joint_positions()
-            # return np.array(joint_states, dtype=np.float32)
+            # Piper SDK에서 관절 데이터 읽기
+            joint_data = self.robot_connection.GetArmJointFeedBack()
             
-            # 임시로 Mock 데이터 반환
-            return np.zeros(self.config.dof, dtype=np.float32)
+            if not joint_data or joint_data.time_stamp <= 0:
+                return self.last_joint_data  # 이전 데이터 사용
+            
+            # 관절 각도 추출 (라디안으로 변환)
+            joint_positions = np.array([
+                joint_data.joint_state.joint_1 / 1000.0 * np.pi / 180.0,  # 밀리도 -> 라디안
+                joint_data.joint_state.joint_2 / 1000.0 * np.pi / 180.0,
+                joint_data.joint_state.joint_3 / 1000.0 * np.pi / 180.0,
+                joint_data.joint_state.joint_4 / 1000.0 * np.pi / 180.0,
+                joint_data.joint_state.joint_5 / 1000.0 * np.pi / 180.0,
+                joint_data.joint_state.joint_6 / 1000.0 * np.pi / 180.0
+            ], dtype=np.float32)
+            
+            # 그리퍼 데이터 추가 (있는 경우)
+            if hasattr(joint_data.joint_state, 'gripper') and self.config.dof > 6:
+                gripper_data = self.robot_connection.GetArmGripperFeedBack()
+                if gripper_data and gripper_data.time_stamp > 0:
+                    gripper_angle = gripper_data.gripper_state.grippers_angle / 1000000.0  # 마이크로미터 -> 미터
+                    joint_positions = np.append(joint_positions, gripper_angle)
+            
+            # DOF에 맞게 패딩 또는 자르기
+            if len(joint_positions) < self.config.dof:
+                # 부족한 경우 0으로 패딩
+                padded = np.zeros(self.config.dof, dtype=np.float32)
+                padded[:len(joint_positions)] = joint_positions
+                joint_positions = padded
+            elif len(joint_positions) > self.config.dof:
+                # 초과하는 경우 자르기
+                joint_positions = joint_positions[:self.config.dof]
+            
+            self.last_joint_data = joint_positions
+            return joint_positions
             
         except Exception as e:
             self.logger.error(f"Failed to read joint positions: {e}")
-            return None
+            return self.last_joint_data  # 이전 데이터 반환
+    
+    def _read_mock_joint_positions(self) -> Optional[np.ndarray]:
+        """Mock 관절 위치 생성 (SDK 없을 때)"""
+        t = time.time()
+        positions = np.zeros(self.config.dof, dtype=np.float32)
+        
+        for i in range(self.config.dof):
+            freq = 0.1 + i * 0.05
+            amplitude = 0.3 + i * 0.1
+            positions[i] = amplitude * np.sin(2 * np.pi * freq * t)
+        
+        return positions
     
     def _read_effector_pose(self) -> Optional[np.ndarray]:
         """Piper 로봇 엔드이펙터 포즈 읽기"""
+        if not PIPER_SDK_AVAILABLE or not self.robot_connection:
+            return self._read_mock_effector_pose()
+        
         try:
-            # TODO: 실제 Piper 로봇 SDK 사용
-            # 예시:
-            # pose = self.robot_connection.get_end_effector_pose()
-            # return np.array(pose, dtype=np.float32)
+            # Piper SDK에서 엔드이펙터 포즈 데이터 읽기
+            pose_data = self.robot_connection.GetArmEndPoseFeedBack()
             
-            # 임시로 Mock 데이터 반환
-            return np.zeros(self.config.effector_dof, dtype=np.float32)
+            if not pose_data or pose_data.time_stamp <= 0:
+                return self.last_pose_data  # 이전 데이터 사용
+            
+            # 포즈 데이터 추출 (위치는 미터, 회전은 라디안)
+            pose = np.array([
+                pose_data.end_pose.X_axis / 1000.0,  # 밀리미터 -> 미터
+                pose_data.end_pose.Y_axis / 1000.0,
+                pose_data.end_pose.Z_axis / 1000.0,
+                pose_data.end_pose.RX_axis / 1000.0 * np.pi / 180.0,  # 밀리도 -> 라디안
+                pose_data.end_pose.RY_axis / 1000.0 * np.pi / 180.0,
+                pose_data.end_pose.RZ_axis / 1000.0 * np.pi / 180.0
+            ], dtype=np.float32)
+            
+            # effector_dof에 맞게 조정
+            if len(pose) < self.config.effector_dof:
+                padded = np.zeros(self.config.effector_dof, dtype=np.float32)
+                padded[:len(pose)] = pose
+                pose = padded
+            elif len(pose) > self.config.effector_dof:
+                pose = pose[:self.config.effector_dof]
+            
+            self.last_pose_data = pose
+            return pose
             
         except Exception as e:
             self.logger.error(f"Failed to read effector pose: {e}")
-            return None
+            return self.last_pose_data  # 이전 데이터 반환
+    
+    def _read_mock_effector_pose(self) -> Optional[np.ndarray]:
+        """Mock 엔드이펙터 포즈 생성 (SDK 없을 때)"""
+        t = time.time()
+        pose = np.zeros(self.config.effector_dof, dtype=np.float32)
+        
+        # 작은 원형 움직임 시뮬레이션
+        radius = 0.05
+        freq = 0.1
+        pose[0] = 0.3 + radius * np.cos(2 * np.pi * freq * t)  # x
+        pose[1] = radius * np.sin(2 * np.pi * freq * t)  # y
+        pose[2] = 0.4 + 0.02 * np.sin(2 * np.pi * freq * 2 * t)  # z
+        
+        if self.config.effector_dof > 3:
+            pose[3] = 0.05 * np.sin(2 * np.pi * freq * 0.5 * t)  # roll
+            pose[4] = 0.05 * np.cos(2 * np.pi * freq * 0.3 * t)  # pitch
+            pose[5] = 0.05 * np.sin(2 * np.pi * freq * 0.7 * t)  # yaw
+        
+        return pose
     
     def _cleanup_robot(self) -> None:
         """Piper 로봇 연결 정리"""
         try:
-            # TODO: 실제 Piper 로봇 SDK 사용
-            # if self.robot_connection:
-            #     self.robot_connection.disconnect()
+            if self.robot_connection and PIPER_SDK_AVAILABLE:
+                self.robot_connection.DisconnectPort()
+                self.logger.info("Piper robot connection disconnected")
             
-            self.logger.info("Piper robot connection cleaned up")
+            self.robot_connection = None
             
         except Exception as e:
             self.logger.error(f"Error cleaning up robot connection: {e}")
+    
+    def get_robot_status(self) -> Dict[str, Any]:
+        """로봇 특화 상태 정보 반환"""
+        status = self.get_status()
+        
+        if self.robot_connection and PIPER_SDK_AVAILABLE:
+            try:
+                status.update({
+                    'can_port': self.can_port,
+                    'connection_ok': self.robot_connection.isOk(),
+                    'connection_status': self.robot_connection.get_connect_status(),
+                    'interface_version': 'V2' if self.use_v2_interface else 'V1'
+                })
+                
+                # 펌웨어 버전 정보 (가능한 경우)
+                try:
+                    firmware_version = self.robot_connection.GetPiperFirmwareVersion()
+                    if isinstance(firmware_version, str):
+                        status['firmware_version'] = firmware_version
+                except:
+                    pass
+                    
+            except Exception as e:
+                status['robot_error'] = str(e)
+        else:
+            status.update({
+                'can_port': self.can_port,
+                'connection_ok': False,
+                'mock_mode': True
+            })
+        
+        return status
 
 
 class RobotStateCollectorManager:
     """로봇 상태 수집 관리자"""
     
-    def __init__(self, use_mock: bool = False):
+    def __init__(self, use_mock: bool = False, control_frequency: float = 10.0):
         self.use_mock = use_mock
         self.collectors: Dict[str, BaseRobotStateCollector] = {}
         self.is_running = False
@@ -337,21 +502,21 @@ class RobotStateCollectorManager:
         # 로깅 설정
         self.logger = logging.getLogger("RobotStateCollectorManager")
         
-        self._initialize_collectors()
+        self._initialize_collectors(control_frequency)
     
-    def _initialize_collectors(self) -> None:
+    def _initialize_collectors(self, control_frequency: float) -> None:
         """수집기들 초기화"""
         arm_configs = self.hw_config.system_config.arms
         
         for arm_name, arm_config in arm_configs.items():
             if self.use_mock:
-                collector = MockRobotStateCollector(arm_config)
+                collector = MockRobotStateCollector(arm_config, control_frequency)
             else:
                 # 실제 하드웨어 타입에 따라 적절한 수집기 선택
                 if "piper" in arm_name.lower() or "arm" in arm_name.lower():
-                    collector = PiperRobotStateCollector(arm_config)
+                    collector = PiperRobotStateCollector(arm_config, control_frequency)
                 else:
-                    collector = MockRobotStateCollector(arm_config)
+                    collector = MockRobotStateCollector(arm_config, control_frequency)
             
             self.collectors[arm_name] = collector
             self.logger.info(f"Initialized state collector for {arm_name}")
@@ -391,57 +556,29 @@ class RobotStateCollectorManager:
             if state_data:
                 # GR00T 데이터 키 형식으로 변환
                 joint_key = f"state.{arm_name}_joint_position"
-                effector_key = f"state.{arm_name}_effector_position"
+                effector_key = f"state.{arm_name}_effector_pose"
                 
-                states[joint_key] = state_data['joint_positions']
-                states[effector_key] = state_data['effector_pose']
+                states[joint_key] = state_data["joint_positions"]
+                states[effector_key] = state_data["effector_pose"]
         
         return states
     
-    def get_collector_status(self) -> Dict[str, Dict[str, Any]]:
-        """모든 수집기 상태 반환"""
-        status = {}
+    def get_status(self) -> Dict[str, Any]:
+        """전체 시스템 상태 반환"""
+        status = {
+            'manager_running': self.is_running,
+            'total_collectors': len(self.collectors),
+            'collectors': {}
+        }
+        
         for name, collector in self.collectors.items():
-            status[name] = {
-                'is_running': collector.is_running,
-                'collection_rate': collector.get_collection_rate(),
-                'sample_count': collector.sample_count,
-                'queue_size': collector.data_queue.qsize()
-            }
+            status['collectors'][name] = collector.get_status()
+            
+            # Piper 로봇의 경우 추가 상태 정보
+            if isinstance(collector, PiperRobotStateCollector):
+                status['collectors'][name].update(collector.get_robot_status())
+        
         return status
-    
-    def get_current_joint_positions(self) -> Dict[str, np.ndarray]:
-        """현재 모든 관절 위치 반환"""
-        positions = {}
-        states = self.get_all_states()
-        
-        for key, value in states.items():
-            if "joint_position" in key:
-                positions[key] = value
-        
-        return positions
-    
-    def get_current_effector_poses(self) -> Dict[str, np.ndarray]:
-        """현재 모든 엔드이펙터 포즈 반환"""
-        poses = {}
-        states = self.get_all_states()
-        
-        for key, value in states.items():
-            if "effector_position" in key:
-                poses[key] = value
-        
-        return poses
-    
-    def is_all_arms_ready(self) -> bool:
-        """모든 로봇 팔이 준비되었는지 확인"""
-        if not self.is_running:
-            return False
-        
-        for collector in self.collectors.values():
-            if not collector.is_running or collector.last_state is None:
-                return False
-        
-        return True
     
     def __enter__(self):
         """Context manager 진입"""
@@ -453,53 +590,72 @@ class RobotStateCollectorManager:
         self.stop_all_collectors()
 
 
-# 편의용 함수들
-def create_state_collector(use_mock: bool = False) -> RobotStateCollectorManager:
-    """상태 수집기 생성"""
-    return RobotStateCollectorManager(use_mock=use_mock)
-
-
-def test_state_collection(duration: float = 5.0, use_mock: bool = True):
-    """상태 수집 테스트"""
-    print(f"Testing robot state collection for {duration} seconds...")
+def test_piper_state_collector():
+    """Piper 상태 수집기 테스트"""
+    print("Testing Piper Robot State Collector...")
     
-    with create_state_collector(use_mock=use_mock) as collector:
-        start_time = time.time()
-        sample_count = 0
+    # Mock 모드로 테스트
+    with RobotStateCollectorManager(use_mock=False) as manager:
+        print(f"Manager started with {len(manager.collectors)} collectors")
         
-        while time.time() - start_time < duration:
-            states = collector.get_all_states()
-            
+        # 상태 정보 출력
+        status = manager.get_status()
+        print(f"System status: {status}")
+        
+        # 10초간 데이터 수집 테스트
+        for i in range(50):  # 5초간 0.1초 간격
+            states = manager.get_all_states()
             if states:
-                sample_count += 1
-                print(f"Sample {sample_count}:")
-                
-                # 관절 위치 출력
+                print(f"Iteration {i+1}: Collected {len(states)} state values")
                 for key, value in states.items():
-                    if "joint_position" in key:
-                        print(f"  {key}: [{', '.join([f'{x:.3f}' for x in value])}]")
-                    elif "effector_position" in key:
-                        pos = value[:3]
-                        rot = value[3:] if len(value) > 3 else []
-                        pos_str = f"pos=[{', '.join([f'{x:.3f}' for x in pos])}]"
-                        rot_str = f"rot=[{', '.join([f'{x:.3f}' for x in rot])}]" if len(rot) > 0 else ""
-                        print(f"  {key}: {pos_str} {rot_str}")
-                
-                # 상태 출력 (1초마다)
-                if sample_count % 10 == 0:
-                    status = collector.get_collector_status()
-                    for arm, info in status.items():
-                        print(f"  {arm}: {info['collection_rate']:.1f} Hz, queue: {info['queue_size']}")
-                    print(f"  All arms ready: {collector.is_all_arms_ready()}")
-            
+                    if "joint" in key:
+                        print(f"  {key}: [{', '.join([f'{x:.3f}' for x in value[:3]])}...]")
+                    else:
+                        print(f"  {key}: [{', '.join([f'{x:.3f}' for x in value[:3]])}...]")
             time.sleep(0.1)
-        
-        print(f"Test completed. Collected {sample_count} samples.")
 
+
+def main():
+    parser = argparse.ArgumentParser(description="로봇 상태 수집기")
+    parser.add_argument(
+        '--mock', action='store_true',
+        help='Mock 모드로 실행 (실제 하드웨어 대신 시뮬레이션 데이터를 사용)'
+    )
+    parser.add_argument(
+        '--duration', type=float, default=5.0,
+        help='데이터 수집 총 시간 (초)'
+    )
+    parser.add_argument(
+        '--interval', type=float, default=0.1,
+        help='콘솔에 상태를 출력할 간격 (초)'
+    )
+    args = parser.parse_args()
+
+    # 로그 포맷 설정
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    )
+
+    # 매니저 생성 및 시작
+    manager = RobotStateCollectorManager(use_mock=args.mock)
+    manager.start_all_collectors()
+    start_time = time.time()
+
+    try:
+        while time.time() - start_time < args.duration:
+            states = manager.get_all_states()
+            elapsed = time.time() - start_time
+            print(f"[{elapsed:.2f}s] 수집된 상태 항목: {len(states)}")
+            for key, val in states.items():
+                # 넘파이 배열의 앞 3개 값만 표시
+                snippet = ", ".join(f"{x:.3f}" for x in val[:3])
+                print(f"  {key}: [{snippet}, ...]")
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        print("사용자에 의해 중단됨")
+    finally:
+        manager.stop_all_collectors()
 
 if __name__ == "__main__":
-    # 로깅 설정
-    logging.basicConfig(level=logging.INFO)
-    
-    # 테스트 실행
-    test_state_collection(duration=10.0, use_mock=True)
+    main()

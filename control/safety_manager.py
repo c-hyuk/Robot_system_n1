@@ -10,17 +10,24 @@ from dataclasses import dataclass
 from enum import Enum
 import logging
 import numpy as np
+from functools import total_ordering
 
 from config.hardware_config import get_hardware_config, HardwareConfig
 from utils.data_types import SystemConfig
 
 
+@total_ordering
 class SafetyLevel(Enum):
     """안전 수준"""
-    SAFE = "safe"
-    WARNING = "warning"
-    DANGER = "danger"
-    CRITICAL = "critical"
+    SAFE = 0
+    WARNING = 1
+    DANGER = 2
+    CRITICAL = 3
+
+    def __lt__(self, other):
+        if isinstance(other, SafetyLevel):
+            return self.value < other.value
+        return NotImplemented
 
 
 class SafetyViolationType(Enum):
@@ -68,7 +75,7 @@ class SafetyConfig:
     
     # 워크스페이스 제한
     enable_workspace_limits: bool = True
-    workspace_bounds: Dict[str, Tuple[float, float]] = None  # {axis: (min, max)}
+    workspace_bounds: Optional[Dict[str, Tuple[float, float]]] = None  # {axis: (min, max)}
     
     # 충돌 방지
     enable_collision_check: bool = True
@@ -129,7 +136,7 @@ class SafetyManager:
         
         # 안전 모니터링 스레드
         self.monitoring_thread: Optional[threading.Thread] = None
-        self.stop_monitoring = threading.Event()
+        self.stop_monitoring_event = threading.Event()
         
         # 긴급 정지 상태
         self.emergency_stop_active = False
@@ -169,7 +176,7 @@ class SafetyManager:
         if self.monitoring_thread and self.monitoring_thread.is_alive():
             return
         
-        self.stop_monitoring.clear()
+        self.stop_monitoring_event.clear()
         self.monitoring_thread = threading.Thread(target=self._monitoring_loop, daemon=True)
         self.monitoring_thread.start()
         
@@ -177,7 +184,7 @@ class SafetyManager:
     
     def stop_monitoring(self):
         """안전 모니터링 중지"""
-        self.stop_monitoring.set()
+        self.stop_monitoring_event.set()
         
         if self.monitoring_thread and self.monitoring_thread.is_alive():
             self.monitoring_thread.join(timeout=2.0)
@@ -188,7 +195,7 @@ class SafetyManager:
         """안전 모니터링 루프"""
         check_interval = 1.0 / self.config.collision_check_frequency
         
-        while not self.stop_monitoring.is_set():
+        while not self.stop_monitoring_event.is_set():
             start_time = time.time()
             
             try:
@@ -319,15 +326,12 @@ class SafetyManager:
         """워크스페이스 제한 검사"""
         violations = []
         
-        if not self.config.enable_workspace_limits or len(effector_position) < 3:
+        if not self.config.enable_workspace_limits or len(effector_position) < 3 or self.config.workspace_bounds is None:
             return violations
-        
         position_dict = {'x': effector_position[0], 'y': effector_position[1], 'z': effector_position[2]}
-        
         for axis, position in position_dict.items():
             if axis in self.config.workspace_bounds:
                 min_bound, max_bound = self.config.workspace_bounds[axis]
-                
                 if position < min_bound:
                     violations.append(SafetyViolation(
                         violation_type=SafetyViolationType.WORKSPACE_LIMIT,
@@ -338,7 +342,6 @@ class SafetyManager:
                         message=f"Effector {axis} below workspace limit: {position:.3f} < {min_bound:.3f}",
                         timestamp=time.time()
                     ))
-                
                 elif position > max_bound:
                     violations.append(SafetyViolation(
                         violation_type=SafetyViolationType.WORKSPACE_LIMIT,
@@ -349,7 +352,6 @@ class SafetyManager:
                         message=f"Effector {axis} above workspace limit: {position:.3f} > {max_bound:.3f}",
                         timestamp=time.time()
                     ))
-        
         return violations
     
     def _check_velocity_limits(self, arm_name: str, arm_commands: Dict[str, Any]) -> List[SafetyViolation]:
@@ -412,8 +414,8 @@ class SafetyManager:
                             violation_type=SafetyViolationType.COLLISION_RISK,
                             severity=SafetyLevel.CRITICAL,
                             arm_name="both_arms",
-                            current_value=distance,
-                            limit_value=self.config.min_distance_between_arms,
+                            current_value=float(distance),
+                            limit_value=float(self.config.min_distance_between_arms),
                             message=f"Arms too close: {distance:.3f}m < {self.config.min_distance_between_arms:.3f}m",
                             timestamp=time.time()
                         )
@@ -500,7 +502,7 @@ class SafetyManager:
             return
         
         # 가장 심각한 위반의 수준으로 설정
-        max_severity = max(v.severity for v in self.active_violations)
+        max_severity = max((v.severity for v in self.active_violations), default=SafetyLevel.SAFE)
         self.current_safety_level = max_severity
     
     def _trigger_emergency_stop(self, reason: str):
