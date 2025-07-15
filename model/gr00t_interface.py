@@ -85,7 +85,7 @@ class DualPiperGR00TInterface:
         try:
             # Embodiment tag 설정
             if self.embodiment_name in ["dual_piper_arm"]:
-                embodiment_tag = "bimanual_arm"  # GR00T의 기존 태그 중 가장 유사한 것
+                embodiment_tag = "dual_piper_arm"  # Enum 및 메타데이터와 일치
             else:
                 embodiment_tag = self.embodiment_name
             

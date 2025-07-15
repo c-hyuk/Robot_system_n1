@@ -256,6 +256,101 @@ class MockCameraCollector(BaseCameraCollector):
         self.logger.info("Mock camera cleaned up")
 
 
+# === RealSense D435 Collector ===
+class RealSenseCameraCollector(BaseCameraCollector):
+    """Intel RealSense D435 카메라 수집기 (pyrealsense2 사용)"""
+    def __init__(self, camera_config: CameraConfig):
+        super().__init__(camera_config)
+        self.pipeline = None
+        self.profile = None
+
+    def _initialize_camera(self) -> bool:
+        try:
+            import pyrealsense2 as rs
+            self.pipeline = rs.pipeline()
+            config = rs.config()
+            config.enable_stream(rs.stream.color, self.config.width, self.config.height, rs.format.bgr8, self.config.fps)
+            self.profile = self.pipeline.start(config)
+            self.logger.info("RealSense camera initialized")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to initialize RealSense camera: {e}")
+            return False
+
+    def _capture_frame(self) -> Optional[np.ndarray]:
+        try:
+            import pyrealsense2 as rs
+            frames = self.pipeline.wait_for_frames(timeout_ms=1000)
+            color_frame = frames.get_color_frame()
+            if not color_frame:
+                return None
+            frame = np.asanyarray(color_frame.get_data())
+            return frame
+        except Exception as e:
+            self.logger.error(f"RealSense capture error: {e}")
+            return None
+
+    def _cleanup_camera(self) -> None:
+        try:
+            if self.pipeline:
+                self.pipeline.stop()
+                self.pipeline = None
+                self.profile = None
+            self.logger.info("RealSense camera cleaned up")
+        except Exception as e:
+            self.logger.error(f"RealSense cleanup error: {e}")
+
+# === ZED21 Collector ===
+class ZedCameraCollector(BaseCameraCollector):
+    """ZED21 스테레오 카메라 수집기 (pyzed/sl 사용)"""
+    def __init__(self, camera_config: CameraConfig):
+        super().__init__(camera_config)
+        self.zed = None
+        self.runtime = None
+        self.mat = None
+
+    def _initialize_camera(self) -> bool:
+        try:
+            import pyzed.sl as sl
+            self.zed = sl.Camera()
+            init_params = sl.InitParameters()
+            init_params.camera_resolution = sl.RESOLUTION.HD720
+            init_params.camera_fps = self.config.fps
+            status = self.zed.open(init_params)
+            if status != sl.ERROR_CODE.SUCCESS:
+                self.logger.error(f"ZED camera open failed: {status}")
+                return False
+            self.runtime = sl.RuntimeParameters()
+            self.mat = sl.Mat()
+            self.logger.info("ZED camera initialized")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to initialize ZED camera: {e}")
+            return False
+
+    def _capture_frame(self) -> Optional[np.ndarray]:
+        try:
+            import pyzed.sl as sl
+            if self.zed.grab(self.runtime) == sl.ERROR_CODE.SUCCESS:
+                self.zed.retrieve_image(self.mat, sl.VIEW.LEFT)
+                frame = self.mat.get_data()
+                return frame
+            else:
+                return None
+        except Exception as e:
+            self.logger.error(f"ZED capture error: {e}")
+            return None
+
+    def _cleanup_camera(self) -> None:
+        try:
+            if self.zed:
+                self.zed.close()
+                self.zed = None
+            self.logger.info("ZED camera cleaned up")
+        except Exception as e:
+            self.logger.error(f"ZED cleanup error: {e}")
+
+
 class VisionCollectorManager:
     """비전 데이터 수집 관리자"""
     
@@ -280,13 +375,10 @@ class VisionCollectorManager:
             if self.use_mock:
                 collector = MockCameraCollector(camera_config)
             else:
-                # 실제 하드웨어 타입에 따라 적절한 수집기 선택
                 if "d435" in camera_name.lower():
-                    # TODO: RealSenseCollector 구현 후 교체
-                    collector = OpenCVCameraCollector(camera_config)
+                    collector = RealSenseCameraCollector(camera_config)
                 elif "zed" in camera_name.lower():
-                    # TODO: ZedCameraCollector 구현 후 교체
-                    collector = OpenCVCameraCollector(camera_config)
+                    collector = ZedCameraCollector(camera_config)
                 else:
                     collector = OpenCVCameraCollector(camera_config)
             
@@ -391,4 +483,4 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     
     # 테스트 실행
-    test_vision_collection(duration=10.0, use_mock=True)
+    test_vision_collection(duration=10.0, use_mock=False)

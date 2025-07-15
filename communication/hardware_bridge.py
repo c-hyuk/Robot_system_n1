@@ -5,7 +5,7 @@ Piper Hardware Bridge
 
 import time
 import threading
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
 from dataclasses import dataclass
 from enum import Enum
 import logging
@@ -17,6 +17,9 @@ try:
 except ImportError:
     PIPER_SDK_AVAILABLE = False
     print("⚠️ piper_sdk not installed. Using mock interface.")
+
+if TYPE_CHECKING:
+    from piper_sdk import C_PiperInterface_V2
 
 from config.hardware_config import get_hardware_config
 
@@ -59,7 +62,9 @@ class PiperHardwareBridge:
         left_can_port: str = "can0",
         right_can_port: str = "can1",
         auto_enable: bool = True,
-        gripper_enabled: bool = True
+        gripper_enabled: bool = True,
+        left_piper: Optional[C_PiperInterface_V2] = None,
+        right_piper: Optional[C_PiperInterface_V2] = None
     ):
         """
         Piper 하드웨어 브릿지 초기화
@@ -69,6 +74,8 @@ class PiperHardwareBridge:
             right_can_port: 오른쪽 팔 CAN 포트  
             auto_enable: 자동 enable 여부
             gripper_enabled: 그리퍼 사용 여부
+            left_piper: 외부에서 주입된 PiperInterface 객체(왼쪽)
+            right_piper: 외부에서 주입된 PiperInterface 객체(오른쪽)
         """
         self.left_can_port = left_can_port
         self.right_can_port = right_can_port
@@ -78,9 +85,9 @@ class PiperHardwareBridge:
         # 하드웨어 설정
         self.hw_config = get_hardware_config()
         
-        # Piper 인터페이스들
-        self.left_piper: Optional[C_PiperInterface_V2] = None
-        self.right_piper: Optional[C_PiperInterface_V2] = None
+        # Piper 인터페이스들 (DI 적용)
+        self.left_piper: Optional[C_PiperInterface_V2] = left_piper
+        self.right_piper: Optional[C_PiperInterface_V2] = right_piper
         
         # 팔 상태 관리
         self.arm_states: Dict[str, PiperArmStatus] = {
@@ -155,23 +162,44 @@ class PiperHardwareBridge:
     def _connect_arm(self, arm_name: str, can_port: str) -> bool:
         """개별 팔 연결"""
         try:
-            # Piper 인터페이스 생성
-            piper = C_PiperInterface_V2(
-                can_name=can_port,
-                judge_flag=False,          # 외부 CAN 장치 사용
-                can_auto_init=True,        # CAN 자동 초기화
-                dh_is_offset=1,           # 최신 펌웨어용 DH 파라미터
-                start_sdk_joint_limit=True,   # SDK 관절 제한 활성화
-                start_sdk_gripper_limit=True  # SDK 그리퍼 제한 활성화
-            )
-            
-            # CAN 포트 연결
-            if not piper.ConnectPort():
-                self.logger.error(f"Failed to connect CAN port: {can_port}")
-                return False
-            
-            # 연결 대기
-            time.sleep(0.1)
+            # DI: 이미 주입된 PiperInterface가 있으면 재사용
+            if arm_name == "left_arm" and self.left_piper is not None:
+                piper = self.left_piper
+            elif arm_name == "right_arm" and self.right_piper is not None:
+                piper = self.right_piper
+            else:
+                # Piper 인터페이스 생성
+                piper = C_PiperInterface_V2(
+                    can_name=can_port,
+                    judge_flag=False,          # 외부 CAN 장치 사용
+                    can_auto_init=True,        # CAN 자동 초기화
+                    dh_is_offset=1,           # 최신 펌웨어용 DH 파라미터
+                    start_sdk_joint_limit=True,   # SDK 관절 제한 활성화
+                    start_sdk_gripper_limit=True  # SDK 그리퍼 제한 활성화
+                )
+                # 인터페이스 저장
+                if arm_name == "left_arm":
+                    self.left_piper = piper
+                else:
+                    self.right_piper = piper
+
+            # 이미 연결된 경우 ConnectPort() 생략
+            already_connected = False
+            if hasattr(piper, 'get_connect_status'):
+                try:
+                    already_connected = piper.get_connect_status() is True
+                except Exception:
+                    already_connected = False
+
+            if not already_connected:
+                # CAN 포트 연결
+                if not piper.ConnectPort():
+                    self.logger.error(f"Failed to connect CAN port: {can_port}")
+                    return False
+                # 연결 대기
+                time.sleep(0.1)
+            else:
+                self.logger.info(f"{arm_name} PiperInterface already connected, skipping ConnectPort()")
             
             # 팔 활성화 (auto_enable이 True인 경우)
             if self.auto_enable:
@@ -184,12 +212,6 @@ class PiperHardwareBridge:
                 time.sleep(0.1)
                 
                 self.logger.info(f"✅ {arm_name} enabled on {can_port}")
-            
-            # 인터페이스 저장
-            if arm_name == "left_arm":
-                self.left_piper = piper
-            else:
-                self.right_piper = piper
             
             # 상태 업데이트
             self.arm_states[arm_name].state = PiperArmState.ENABLED if self.auto_enable else PiperArmState.CONNECTED

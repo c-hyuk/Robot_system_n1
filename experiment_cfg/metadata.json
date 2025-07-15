@@ -1,0 +1,332 @@
+{
+  "embodiment_tags": {
+    "agibot_genie1": {
+      "canonical_name": "agibot_genie1",
+      "embodiment_tag": "agibot_genie1",
+      "action_keys": [
+        "action.left_arm_joint_position",
+        "action.right_arm_joint_position",
+        "action.left_arm_effector_position",
+        "action.right_arm_effector_position",
+        "action.left_gripper_position",
+        "action.right_gripper_position",
+        "action.joint_positions",
+        "action.gripper_positions"
+      ],
+      "observation_keys": [
+        "observation.state.joint_positions",
+        "observation.state.joint_velocities",
+        "observation.state.end_effector_poses",
+        "observation.state.gripper_positions",
+        "observation.state.left_arm_joint_position",
+        "observation.state.right_arm_joint_position",
+        "observation.state.left_effector_position",
+        "observation.state.right_effector_position",
+        "observation.state.left_gripper_position",
+        "observation.state.right_gripper_position",
+        "observation.video.left_wrist",
+        "observation.video.right_wrist",
+        "observation.video.head",
+        "observation.video.left_arm_d435",
+        "observation.video.right_arm_d435",
+        "observation.video.center_zed21"
+      ],
+      "statistics": {
+        "state": {
+          "joint_positions": {
+            "max": [3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14],
+            "min": [-3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "left_arm_joint_position": {
+            "max": [3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14],
+            "min": [-3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "right_arm_joint_position": {
+            "max": [3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14],
+            "min": [-3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "left_effector_position": {
+            "max": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "min": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "right_effector_position": {
+            "max": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "min": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "left_arm_effector_position": {
+            "max": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "min": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "right_arm_effector_position": {
+            "max": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "min": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "gripper_positions": {
+            "max": [1.0, 1.0],
+            "min": [0.0, 0.0],
+            "mean": [0.0, 0.0],
+            "std": [1.0, 1.0]
+          },
+          "left_gripper_position": {
+            "max": [1.0],
+            "min": [0.0],
+            "mean": [0.0],
+            "std": [1.0]
+          },
+          "right_gripper_position": {
+            "max": [1.0],
+            "min": [0.0],
+            "mean": [0.0],
+            "std": [1.0]
+          }
+        },
+        "action": {
+          "joint_positions": {
+            "max": [3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14],
+            "min": [-3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "left_arm_joint_position": {
+            "max": [3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14],
+            "min": [-3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "right_arm_joint_position": {
+            "max": [3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14],
+            "min": [-3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "left_effector_position": {
+            "max": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "min": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "right_effector_position": {
+            "max": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "min": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "left_arm_effector_position": {
+            "max": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "min": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "right_arm_effector_position": {
+            "max": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "min": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "gripper_positions": {
+            "max": [1.0, 1.0],
+            "min": [0.0, 0.0],
+            "mean": [0.0, 0.0],
+            "std": [1.0, 1.0]
+          },
+          "left_gripper_position": {
+            "max": [1.0],
+            "min": [0.0],
+            "mean": [0.0],
+            "std": [1.0]
+          },
+          "right_gripper_position": {
+            "max": [1.0],
+            "min": [0.0],
+            "mean": [0.0],
+            "std": [1.0]
+          }
+        }
+      },
+      "modalities": {
+        "video": {
+          "left_wrist": {
+            "resolution": [224, 224],
+            "channels": 3,
+            "fps": 10.0
+          },
+          "right_wrist": {
+            "resolution": [224, 224],
+            "channels": 3,
+            "fps": 10.0
+          },
+          "head": {
+            "resolution": [224, 224],
+            "channels": 3,
+            "fps": 10.0
+          },
+          "left_arm_d435": {
+            "resolution": [224, 224],
+            "channels": 3,
+            "fps": 10.0
+          },
+          "right_arm_d435": {
+            "resolution": [224, 224],
+            "channels": 3,
+            "fps": 10.0
+          },
+          "center_zed21": {
+            "resolution": [224, 224],
+            "channels": 3,
+            "fps": 10.0
+          }
+        },
+        "state": {
+          "joint_positions": { "absolute": true, "shape": [14], "continuous": true },
+          "gripper_positions": { "absolute": true, "shape": [2], "continuous": true },
+          "left_arm_joint_position": { "absolute": true, "shape": [7], "continuous": true },
+          "right_arm_joint_position": { "absolute": true, "shape": [7], "continuous": true },
+          "left_effector_position": { "absolute": true, "shape": [6], "continuous": true },
+          "right_effector_position": { "absolute": true, "shape": [6], "continuous": true },
+          "left_gripper_position": { "absolute": true, "shape": [1], "continuous": true },
+          "right_gripper_position": { "absolute": true, "shape": [1], "continuous": true },
+          "left_arm_effector_position": { "absolute": true, "shape": [6], "continuous": true },
+          "right_arm_effector_position": { "absolute": true, "shape": [6], "continuous": true }
+        },
+        "action": {
+          "joint_positions": { "absolute": true, "shape": [14], "continuous": true },
+          "gripper_positions": { "absolute": true, "shape": [2], "continuous": true },
+          "left_arm_joint_position": { "absolute": true, "shape": [7], "continuous": true },
+          "right_arm_joint_position": { "absolute": true, "shape": [7], "continuous": true },
+          "left_effector_position": { "absolute": true, "shape": [6], "continuous": true },
+          "right_effector_position": { "absolute": true, "shape": [6], "continuous": true },
+          "left_gripper_position": { "absolute": true, "shape": [1], "continuous": true },
+          "right_gripper_position": { "absolute": true, "shape": [1], "continuous": true },
+          "left_arm_effector_position": { "absolute": true, "shape": [6], "continuous": true },
+          "right_arm_effector_position": { "absolute": true, "shape": [6], "continuous": true }
+        }
+      }
+    },
+    "bimanual_arm": {
+      "canonical_name": "bimanual_arm",
+      "action_keys": [
+        "action.joint_position",
+        "action.gripper_position"
+      ],
+      "observation_keys": [
+        "observation.state.joint_position",
+        "observation.state.gripper_position",
+        "observation.video.camera"
+      ],
+      "statistics": {
+        "state": {
+          "joint_position": {
+            "max": [3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14],
+            "min": [-3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "gripper_position": {
+            "max": [1.0, 1.0],
+            "min": [0.0, 0.0],
+            "mean": [0.0, 0.0],
+            "std": [1.0, 1.0]
+          }
+        },
+        "action": {
+          "joint_position": {
+            "max": [3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14],
+            "min": [-3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "gripper_position": {
+            "max": [1.0, 1.0],
+            "min": [0.0, 0.0],
+            "mean": [0.0, 0.0],
+            "std": [1.0, 1.0]
+          }
+        }
+      },
+      "modalities": {
+        "state": {
+          "joint_position": { "absolute": true, "shape": [14], "continuous": true },
+          "gripper_position": { "absolute": true, "shape": [2], "continuous": true }
+        },
+        "action": {
+          "joint_position": { "absolute": true, "shape": [14], "continuous": true },
+          "gripper_position": { "absolute": true, "shape": [2], "continuous": true }
+        }
+      }
+    },
+    "new_embodiment": {
+      "canonical_name": "new_embodiment",
+      "action_keys": [
+        "action.left_arm_joint_position",
+        "action.right_arm_joint_position",
+        "action.left_arm_effector_position",
+        "action.right_arm_effector_position"
+      ],
+      "observation_keys": [
+        "observation.state.joint_positions",
+        "observation.video.camera"
+      ],
+      "statistics": {
+        "state": {
+          "joint_positions": {
+            "max": [3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14],
+            "min": [-3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          }
+        },
+        "action": {
+          "left_arm_joint_position": {
+            "max": [3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14],
+            "min": [-3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "right_arm_joint_position": {
+            "max": [3.14, 3.14, 3.14, 3.14, 3.14, 3.14, 3.14],
+            "min": [-3.14, -3.14, -3.14, -3.14, -3.14, -3.14, -3.14],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "left_arm_effector_position": {
+            "max": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "min": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          },
+          "right_arm_effector_position": {
+            "max": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "min": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+            "mean": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            "std": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+          }
+        }
+      },
+      "modalities": {
+        "state": {
+          "joint_positions": { "absolute": true, "shape": [14], "continuous": true }
+        },
+        "action": {
+          "left_arm_joint_position": { "absolute": true, "shape": [7], "continuous": true },
+          "right_arm_joint_position": { "absolute": true, "shape": [7], "continuous": true },
+          "left_arm_effector_position": { "absolute": true, "shape": [6], "continuous": true },
+          "right_arm_effector_position": { "absolute": true, "shape": [6], "continuous": true }
+        }
+      }
+    }
+  }
+}

@@ -34,7 +34,8 @@ from packaging import version
 from PIL import Image
 from torchvision import io
 from transformers.feature_extraction_utils import BatchFeature
-from transformers.image_utils import ImageInput, VideoInput
+from transformers.image_utils import ImageInput
+from transformers.video_utils import VideoInput
 from transformers.processing_utils import ProcessingKwargs, ProcessorMixin, Unpack
 from transformers.tokenization_utils_base import PreTokenizedInput, TextInput
 from transformers.utils import logging
@@ -834,10 +835,10 @@ class Eagle2_5_VLProcessor(ProcessorMixin):
         # if "auto_map" in processor_dict:
         #    del processor_dict["auto_map"]
 
-        unused_kwargs = cls.validate_init_kwargs(
+        unused_kwargs, valid_kwargs = cls.validate_init_kwargs(
             processor_config=processor_dict, valid_kwargs=cls.valid_kwargs
         )
-        processor = cls(*args, **processor_dict)
+        processor = cls(*args, **valid_kwargs)
 
         # Update processor with kwargs if needed
         for key in set(kwargs.keys()):

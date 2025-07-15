@@ -28,7 +28,7 @@ class HardwareConfig:
         
         # D435i 카메라 설정 (첫 번째 RealSense)
         d435i_left = CameraConfig(
-            name="left_arm_d435i",
+            name="left_arm_d435",
             width=640, height=480, fps=30,
             device_id="/dev/video2",  # RealSense D435i의 컬러 스트림
             processed_width=224, processed_height=224
@@ -87,7 +87,7 @@ class HardwareConfig:
         
         return SystemConfig(
             cameras={
-                "left_arm_d435i": d435i_left,
+                "left_arm_d435": d435i_left,
                 "right_arm_d435": d435_right,
                 "center_zed21": zed21_center
             },
@@ -128,7 +128,7 @@ class HardwareConfig:
         video_modality = ModalityConfig(
             delta_indices=[0],  # state_horizon=1 이므로 현재 시점만
             modality_keys=[
-                "video.left_arm_d435i",
+                "video.left_arm_d435",
                 "video.right_arm_d435", 
                 "video.center_zed21"
             ]

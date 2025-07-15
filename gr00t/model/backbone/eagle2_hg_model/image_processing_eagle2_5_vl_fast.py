@@ -14,8 +14,8 @@ from transformers.image_processing_utils import (
     get_patch_output_size,
 )
 from transformers.image_processing_utils_fast import (
-    BASE_IMAGE_PROCESSOR_FAST_DOCSTRING,
-    BASE_IMAGE_PROCESSOR_FAST_DOCSTRING_PREPROCESS,
+    # BASE_IMAGE_PROCESSOR_FAST_DOCSTRING,
+    # BASE_IMAGE_PROCESSOR_FAST_DOCSTRING_PREPROCESS,
     BaseImageProcessorFast,
     DefaultFastImageProcessorKwargs,
     group_images_by_shape,
@@ -28,11 +28,11 @@ from transformers.image_utils import (
     ImageInput,
     PILImageResampling,
     SizeDict,
-    VideoInput,
     get_image_size,
     make_flat_list_of_images,
     validate_kwargs,
 )
+from transformers.video_utils import VideoInput
 from transformers.processing_utils import Unpack
 from transformers.utils import (
     TensorType,
@@ -88,19 +88,19 @@ class Eagle2_5_VLFastImageProcessorKwargs(DefaultFastImageProcessorKwargs):
     do_pad: Optional[bool]
 
 
-@add_start_docstrings(
-    "Constructs a fast ConvNeXT image processor. Based on [`SiglipImageProcessor`] with incorporation of processing each video frame.",
-    BASE_IMAGE_PROCESSOR_FAST_DOCSTRING,
-    """
-        image_grid_pinpoints (`List[List[int]]`, *optional*):
-            A list of possible resolutions to use for processing high resolution images. The best resolution is selected
-            based on the original size of the image. Can be overridden by `image_grid_pinpoints` in the `preprocess`
-            method. Not used for processing videos.
-        do_pad (`bool`, *optional*):
-            Whether to pad the image. If `True`, will pad the patch dimension of the images in the batch to the largest
-            number of patches in the batch. Padding will be applied to the bottom and right with zeros.
-    """,
-)
+# @add_start_docstrings(
+#     "Constructs a fast ConvNeXT image processor. Based on [`SiglipImageProcessor`] with incorporation of processing each video frame.",
+#     BASE_IMAGE_PROCESSOR_FAST_DOCSTRING,
+#     """
+#         image_grid_pinpoints (`List[List[int]]`, *optional*):
+#             A list of possible resolutions to use for processing high resolution images. The best resolution is selected
+#             based on the original size of the image. Can be overridden by `image_grid_pinpoints` in the `preprocess`
+#             method. Not used for processing videos.
+#         do_pad (`bool`, *optional*):
+#             Whether to pad the image. If `True`, will pad the patch dimension of the images in the batch to the largest
+#             number of patches in the batch. Padding will be applied to the bottom and right with zeros.
+#     """,
+# )
 class Eagle2_5_VLImageProcessorFast(BaseImageProcessorFast):
     resample = PILImageResampling.BICUBIC
     image_mean = IMAGENET_STANDARD_MEAN
@@ -124,22 +124,22 @@ class Eagle2_5_VLImageProcessorFast(BaseImageProcessorFast):
     def __init__(self, **kwargs: Unpack[Eagle2_5_VLFastImageProcessorKwargs]):
         super().__init__(**kwargs)
 
-    @add_start_docstrings(
-        BASE_IMAGE_PROCESSOR_FAST_DOCSTRING_PREPROCESS,
-        """
-            max_dynamic_tiles (`int`, *optional*):
-                The maximum number of dynamic tiles to use for processing high resolution images.
-            min_dynamic_tiles (`int`, *optional*):
-                The minimum number of dynamic tiles to use for processing high resolution images.
-            use_thumbnail (`bool`, *optional*):
-                Whether to use a thumbnail for processing high resolution images.
-            pad_during_tiling (`bool`, *optional*):
-                Whether to pad the image during tiling.
-            do_pad (`bool`, *optional*):
-                    Whether to pad the image. If `True`, will pad the patch dimension of the images in the batch to the largest
-                    number of patches in the batch. Padding will be applied to the bottom and right with zeros.
-        """,
-    )
+    # @add_start_docstrings(
+    #     BASE_IMAGE_PROCESSOR_FAST_DOCSTRING_PREPROCESS,
+    #     """
+    #         max_dynamic_tiles (`int`, *optional*):
+    #             The maximum number of dynamic tiles to use for processing high resolution images.
+    #         min_dynamic_tiles (`int`, *optional*):
+    #             The minimum number of dynamic tiles to use for processing high resolution images.
+    #         use_thumbnail (`bool`, *optional*):
+    #             Whether to use a thumbnail for processing high resolution images.
+    #         pad_during_tiling (`bool`, *optional*):
+    #             Whether to pad the image during tiling.
+    #         do_pad (`bool`, *optional*):
+    #                 Whether to pad the image. If `True`, will pad the patch dimension of the images in the batch to the largest
+    #                 number of patches in the batch. Padding will be applied to the bottom and right with zeros.
+    #     """,
+    # )
 
     # NOTE(YL): we will overload the preprocess method to add the image_flags
     # def preprocess(

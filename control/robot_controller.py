@@ -93,7 +93,7 @@ class SystemState:
 class RobotController:
     """메인 로봇 컨트롤러"""
     
-    def __init__(self, config: Optional[RobotControllerConfig] = None):
+    def __init__(self, config: Optional[RobotControllerConfig] = None, left_piper=None, right_piper=None):
         """
         로봇 컨트롤러 초기화
         
@@ -101,6 +101,8 @@ class RobotController:
             config: 컨트롤러 설정
         """
         self.config = config or RobotControllerConfig()
+        self.left_piper = left_piper
+        self.right_piper = right_piper
         
         # 하드웨어 설정 로드
         self.hw_config = get_hardware_config()
@@ -326,7 +328,9 @@ class RobotController:
                 left_can_port=self.config.left_arm_can_port,
                 right_can_port=self.config.right_arm_can_port,
                 auto_enable=True,
-                gripper_enabled=True
+                gripper_enabled=True,
+                left_piper=self.left_piper,
+                right_piper=self.right_piper
             )
             
             if self.hardware_bridge.connect():

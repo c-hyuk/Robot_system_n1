@@ -147,33 +147,15 @@ class Gr00tPolicy(BasePolicy):
         """
         Make a prediction with the model.
         Args:
-            obs (Dict[str, Any]): The observation to make a prediction for.
-
-        e.g. obs = {
-            "video.<>": np.ndarray,  # (T, H, W, C)
-            "state.<>": np.ndarray, # (T, D)
-        }
-
-        or with batched input:
-        e.g. obs = {
-            "video.<>": np.ndarray,, # (B, T, H, W, C)
-            "state.<>": np.ndarray, # (B, T, D)
-        }
-
+            observations (Dict[str, Any]): The observation to use for prediction.
         Returns:
             Dict[str, Any]: The predicted action.
         """
-        # let the get_action handles both batch and single input
-        is_batch = self._check_state_is_batched(observations)
-        if not is_batch:
-            observations = unsqueeze_dict_values(observations)
-        # Apply transforms
         normalized_input = self.apply_transforms(observations)
-
         normalized_action = self._get_action_from_normalized_input(normalized_input)
         unnormalized_action = self._get_unnormalized_action(normalized_action)
 
-        if not is_batch:
+        if not self._check_state_is_batched(observations):
             unnormalized_action = squeeze_dict_values(unnormalized_action)
         return unnormalized_action
 
@@ -275,7 +257,7 @@ class Gr00tPolicy(BasePolicy):
             metadatas = json.load(f)
 
         # Get metadata for the specific embodiment
-        metadata_dict = metadatas.get(self.embodiment_tag.value)
+        metadata_dict = metadatas["embodiment_tags"].get(self.embodiment_tag.value)
         if metadata_dict is None:
             raise ValueError(
                 f"No metadata found for embodiment tag: {self.embodiment_tag.value}",

@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: piper_sdk
+Version: 0.0.0
+Summary: A sdk to control piper
+Author-email: RosenYin <yinruocheng321@gmail.com>
+License: MIT License
+Project-URL: Homepage, https://github.com/agilexrobotics/piper_sdk
+Project-URL: Repository, https://github.com/agilexrobotics/piper_sdk
+Project-URL: ChangeLog, https://github.com/agilexrobotics/piper_sdk/blob/master/CHANGELOG.MD
+Classifier: Operating System :: POSIX :: Linux
+Requires-Python: >=3.6
+Description-Content-Type: text/x-rst
+Requires-Dist: python-can>=3.3.4

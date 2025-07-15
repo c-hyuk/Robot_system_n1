@@ -26,3 +26,6 @@ ChangeLog = "https://github.com/agilexrobotics/piper_sdk/blob/master/CHANGELOG.M
 
 [tool.setuptools.dynamic]
 readme = { file = "README.MD" }
+
+[tool.setuptools.packages.find]
+where = ["src"]

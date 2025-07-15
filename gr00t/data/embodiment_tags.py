@@ -37,6 +37,11 @@ class EmbodimentTag(Enum):
     Any new embodiment for finetuning.
     """
 
+    DUAL_PIPER_ARM = "dual_piper_arm"
+    """
+    Dual Piper Arm custom robot embodiment.
+    """
+
 
 # Embodiment tag string: to projector index in the Action Expert Module
 EMBODIMENT_TAG_MAPPING = {
@@ -44,4 +49,5 @@ EMBODIMENT_TAG_MAPPING = {
     EmbodimentTag.OXE_DROID.value: 17,
     EmbodimentTag.AGIBOT_GENIE1.value: 26,
     EmbodimentTag.GR1.value: 24,
+    EmbodimentTag.DUAL_PIPER_ARM.value: 99,  # Custom index for Dual Piper Arm
 }

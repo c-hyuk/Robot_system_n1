@@ -19,6 +19,12 @@ from control.robot_controller import RobotController, RobotControllerConfig, cre
 from config.hardware_config import initialize_hardware_config, get_hardware_config
 from utils.data_types import SystemConfig
 
+# Piper SDK import (DI용)
+try:
+    from piper_sdk import C_PiperInterface_V2
+except ImportError:
+    C_PiperInterface_V2 = None
+
 
 class RobotSystem:
     """전체 로봇 시스템 관리자"""
@@ -70,8 +76,29 @@ class RobotSystem:
                 enable_performance_monitoring=args.enable_monitoring
             )
             
-            # 3. 로봇 컨트롤러 생성
-            self.controller = RobotController(controller_config)
+            # 2.5. PiperInterface 객체 생성 (DI)
+            left_piper = None
+            right_piper = None
+            if C_PiperInterface_V2 is not None:
+                left_piper = C_PiperInterface_V2(
+                    can_name=args.left_can,
+                    judge_flag=False,
+                    can_auto_init=True,
+                    dh_is_offset=1,
+                    start_sdk_joint_limit=True,
+                    start_sdk_gripper_limit=True
+                )
+                right_piper = C_PiperInterface_V2(
+                    can_name=args.right_can,
+                    judge_flag=False,
+                    can_auto_init=True,
+                    dh_is_offset=1,
+                    start_sdk_joint_limit=True,
+                    start_sdk_gripper_limit=True
+                )
+            
+            # 3. 로봇 컨트롤러 생성 (DI 적용)
+            self.controller = RobotController(controller_config, left_piper=left_piper, right_piper=right_piper)
             
             # 4. 상태 모니터링 콜백 등록
             self.controller.add_status_callback(self._status_callback)
@@ -247,7 +274,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Dual Piper Robot Control System")
     
     # 모델 설정
-    parser.add_argument("--model-path", type=str, default="nvidia/gr00t-1.5b",
+    parser.add_argument("--model-path", type=str, default="nvidia/GR00T-N1.5-3B",
                         help="GR00T model path or HuggingFace ID")
     parser.add_argument("--frequency", type=float, default=10.0,
                         help="Control frequency in Hz")
@@ -324,11 +351,10 @@ def check_dependencies():
         logger.info(f"✅ NumPy: {np.__version__}")
         
         # Piper SDK 확인
-        try:
-            from piper_sdk import C_PiperInterface_V2
-            logger.info("✅ Piper SDK available")
-        except ImportError:
+        if C_PiperInterface_V2 is None:
             logger.warning("⚠️ Piper SDK not available - using mock interface")
+        else:
+            logger.info("✅ Piper SDK available")
         
         # CUDA 확인
         if torch.cuda.is_available():
