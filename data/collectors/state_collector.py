@@ -17,6 +17,7 @@ import logging
 import argparse
 import os
 import sys
+from scipy.spatial.transform import Rotation as R
 
 # 정상 작동하는 첫 번째/두 번째 파일과 동일한 import 방식 사용
 try:
@@ -50,31 +51,27 @@ class PiperRobotStateCollector:
         """긴급정지 및 복구 - 첫 번째 파일과 동일한 방식"""
         arm_name = f"로봇 ({self.can_port})"
         self.logger.info(f"=== {arm_name} 긴급정지 및 복구 중... ===")
-        
+        if self.robot_connection is None:
+            self.logger.error(f"❌ {arm_name} robot_connection is None, cannot perform emergency stop/restore.")
+            return False
         try:
             # 긴급정지
             self.robot_connection.MotionCtrl_1(0x01, 0, 0x00)
             self.logger.info(f"✅ {arm_name} 긴급정지 완료")
             time.sleep(0.5)
-            
             # 복구
             self.robot_connection.MotionCtrl_1(0x02, 0, 0x00)
             self.robot_connection.MotionCtrl_1(0x00, 0, 0x00)
-            
             self.robot_connection.MotionCtrl_2(0x01, 0, 0, 0x00)  # StandBy 모드
             self.robot_connection.GripperCtrl(0, 0, 0x02, 0)
             time.sleep(1)
-            
             self.robot_connection.MotionCtrl_2(0x01, 0, 0, 0x00)  # CAN 모드
             self.robot_connection.GripperCtrl(0, 0, 0x03, 0)
             time.sleep(0.05)
-            
             self.robot_connection.EnableArm(7)  # 로봇 팔 활성화
             time.sleep(0.05)
-            
             self.logger.info(f"✅ {arm_name} 정상 리셋 완료")
             return True
-                
         except Exception as e:
             self.logger.error(f"❌ {arm_name} 긴급정지/복구 실패: {e}")
             return False
@@ -83,9 +80,10 @@ class PiperRobotStateCollector:
         """Slave 모드 설정 - 첫 번째 파일과 동일한 방식"""
         arm_name = f"로봇 ({self.can_port})"
         self.logger.info(f"=== {arm_name} Slave 모드 설정 중... ===")
-        
+        if self.robot_connection is None:
+            self.logger.error(f"❌ {arm_name} robot_connection is None, cannot set slave mode.")
+            return False
         try:
-            # 물리적으로 다른 CAN 포트를 사용하므로 모든 팔에 동일한 설정 적용
             self.robot_connection.MasterSlaveConfig(0xFC, 0, 0, 0)  # Slave 모드
             self.logger.info(f"✅ {arm_name} Slave 모드 설정 완료")
             return True
@@ -97,15 +95,15 @@ class PiperRobotStateCollector:
         """로봇 팔 활성화 - 첫 번째 파일과 동일한 방식"""
         arm_name = f"로봇 ({self.can_port})"
         self.logger.info(f"=== {arm_name} 활성화 중... ===")
-        
+        if self.robot_connection is None:
+            self.logger.error(f"❌ {arm_name} robot_connection is None, cannot enable arm.")
+            return False
         try:
             self.robot_connection.EnableArm(7)
             self.robot_connection.GripperCtrl(0, 1000, 0x01, 0)
-            
             # 활성화 상태 확인 (간단한 버전)
             timeout = 5
             start_time = time.time()
-            
             while time.time() - start_time < timeout:
                 try:
                     # 데이터 수신 확인
@@ -113,15 +111,12 @@ class PiperRobotStateCollector:
                     if joint_data:
                         self.logger.info(f"✅ {arm_name} 활성화 완료")
                         return True
-                except:
+                except Exception:
                     pass
-                    
                 self.robot_connection.EnableArm(7)
                 time.sleep(1)
-            
             self.logger.warning(f"⚠️ {arm_name} 활성화 타임아웃 (하지만 계속 진행)")
             return True  # 타임아웃이어도 진행
-            
         except Exception as e:
             self.logger.error(f"❌ {arm_name} 활성화 실패: {e}")
             return False
@@ -495,17 +490,25 @@ class DualArmStateCollectorManager:
         self.is_running = False
         self.logger = logging.getLogger("DualArmStateManager")
     
+    def _split_pose_to_pos_quat(self, pose: np.ndarray) -> tuple:
+        # pose: [x, y, z, rx, ry, rz] -> pos(3,), quat(4,)
+        pos = pose[:3]
+        quat = self._euler_to_quaternion(pose[3], pose[4], pose[5])
+        return pos, quat
+
+    def _euler_to_quaternion(self, rx, ry, rz):
+        # (라디안 단위) -> (w, x, y, z) 순서
+        quat = R.from_euler('xyz', [rx, ry, rz]).as_quat()  # (x, y, z, w)
+        return np.array([quat[3], quat[0], quat[1], quat[2]], dtype=np.float32)
+
     def start_all_collectors(self) -> bool:
         """모든 상태 수집기 시작"""
         if self.is_running:
             self.logger.warning("State collectors already running")
             return True
-        
         left_ok = self.left_collector.start_collection()
         right_ok = self.right_collector.start_collection()
-        
         self.is_running = left_ok or right_ok  # 하나라도 성공하면 실행
-        
         if left_ok and right_ok:
             self.logger.info("✅ Both arms started successfully")
         elif left_ok:
@@ -514,32 +517,33 @@ class DualArmStateCollectorManager:
             self.logger.warning("⚠️ Only right arm started")
         else:
             self.logger.error("❌ Failed to start any arm")
-        
         return self.is_running
-    
+
     def stop_all_collectors(self) -> None:
         """모든 상태 수집기 중지"""
         self.left_collector.stop_collection()
         self.right_collector.stop_collection()
         self.is_running = False
         self.logger.info("✅ All collectors stopped")
-    
+
     def get_all_states(self) -> Dict[str, Any]:
-        """모든 로봇의 최신 상태 수집"""
+        """모든 로봇의 최신 상태 수집 (hardware_config.py 표준 포맷)"""
         states = {}
-        
         # 왼팔 상태
         left_state = self.left_collector.get_latest_state()
         if left_state:
-            states["state.left_arm_joint_position"] = left_state["joint_positions"]
-            states["state.left_arm_effector_pose"] = left_state["effector_pose"]
-        
+            pos, quat = self._split_pose_to_pos_quat(left_state["effector_pose"])
+            states["state.left_arm_eef_pos"] = pos
+            states["state.left_arm_eef_quat"] = quat
+            # gripper 값: 실제 SDK에서 읽을 수 있으면 대체, 없으면 mock
+            states["state.left_gripper_qpos"] = np.array([0.0], dtype=np.float32)
         # 오른팔 상태
         right_state = self.right_collector.get_latest_state()
         if right_state:
-            states["state.right_arm_joint_position"] = right_state["joint_positions"]
-            states["state.right_arm_effector_pose"] = right_state["effector_pose"]
-        
+            pos, quat = self._split_pose_to_pos_quat(right_state["effector_pose"])
+            states["state.right_arm_eef_pos"] = pos
+            states["state.right_arm_eef_quat"] = quat
+            states["state.right_gripper_qpos"] = np.array([0.0], dtype=np.float32)
         return states
     
     def get_status(self) -> Dict[str, Any]:

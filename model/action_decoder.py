@@ -223,15 +223,7 @@ class DualPiperActionDecoder(BaseActionDecoder):
                 decoded[key.replace('position', 'velocity')] = velocity
         
         return decoded
-    
-    def _decode_trajectory_commands(self, action_tokens: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-        """궤적 명령 디코딩"""
-        decoded = {}
-        
-        for key, value in action_tokens.items():
-            if key not in self.action_mapping:
-                continue
-            
+              
     def _decode_trajectory_commands(self, action_tokens: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         """궤적 명령 디코딩"""
         decoded = {}

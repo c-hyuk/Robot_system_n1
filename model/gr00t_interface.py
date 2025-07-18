@@ -136,6 +136,28 @@ class DualPiperGR00TInterface:
             self.data_pipeline = None
             self.logger.info("Data pipeline stopped")
     
+    def _ensure_gr00t_format(self, observations: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        관찰 데이터가 GR00T 형식인지 확인하고 필요시 변환
+        
+        Args:
+            observations: 관찰 데이터
+            
+        Returns:
+            GR00T 형식의 데이터
+        """
+        # 이미 올바른 형식인지 확인 (개별 비디오 키가 있는지)
+        has_individual_video_keys = any(key.startswith('video.') for key in observations.keys())
+        
+        if has_individual_video_keys:
+            # 이미 올바른 형식이므로 그대로 반환
+            self.logger.debug("Data already in correct GR00T format")
+            return observations
+        else:
+            # 변환이 필요한 경우
+            self.logger.debug("Converting data to GR00T format")
+            return self._convert_to_gr00t_format(observations)
+    
     def get_action_from_observations(self, observations: Dict[str, Any]) -> Dict[str, Any]:
         """
         관찰 데이터로부터 액션 예측
@@ -149,8 +171,11 @@ class DualPiperGR00TInterface:
         start_time = time.time()
         
         try:
-            # GR00T Policy로 액션 예측
-            action_dict = self.policy.get_action(observations)
+            # GR00T가 기대하는 형식으로 데이터 변환
+            gr00t_data = self._ensure_gr00t_format(observations)
+            
+            # GR00T Policy로 액션 예측 (변환 파이프라인 우회)
+            action_dict = self.policy.get_action(gr00t_data)
             
             # 통계 업데이트
             inference_time = time.time() - start_time
@@ -165,6 +190,58 @@ class DualPiperGR00TInterface:
         except Exception as e:
             self.logger.error(f"Action prediction failed: {e}")
             return self._get_safe_action()
+    
+    def _convert_to_gr00t_format(self, observations: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        관찰 데이터를 GR00T가 기대하는 형식으로 변환
+        
+        Args:
+            observations: 원본 관찰 데이터
+            
+        Returns:
+            GR00T 형식의 데이터
+        """
+        gr00t_data = {}
+        
+        # 비디오 데이터 변환
+        if 'video' in observations:
+            video_tensor = observations['video']
+            if isinstance(video_tensor, torch.Tensor):
+                # (B, N_cameras, C, H, W) -> 각 카메라별로 분리
+                if video_tensor.ndim == 5:  # (B, N_cameras, C, H, W)
+                    batch_size, num_cameras, channels, height, width = video_tensor.shape
+                    
+                    # 각 카메라별로 분리하여 개별 키로 제공
+                    video_keys = self.data_config.video_keys
+                    for i, key in enumerate(video_keys):
+                        if i < num_cameras:
+                            # (B, C, H, W) -> (B, H, W, C) -> numpy array
+                            camera_data = video_tensor[:, i]  # (B, C, H, W)
+                            camera_data = camera_data.permute(0, 2, 3, 1)  # (B, H, W, C)
+                            camera_data = (camera_data * 255).to(torch.uint8).cpu().numpy()
+                            gr00t_data[key] = camera_data
+                        else:
+                            # 카메라가 부족한 경우 빈 데이터 생성
+                            gr00t_data[key] = np.zeros((batch_size, height, width, channels), dtype=np.uint8)
+                else:
+                    self.logger.warning(f"Unexpected video tensor shape: {video_tensor.shape}")
+                    # 기본 비디오 키에 빈 데이터 제공
+                    for key in self.data_config.video_keys:
+                        gr00t_data[key] = np.zeros((1, 224, 224, 3), dtype=np.uint8)
+        
+        # 상태 데이터
+        if 'state' in observations:
+            gr00t_data['state'] = observations['state']
+        
+        # 액션 데이터
+        if 'action' in observations:
+            gr00t_data['action'] = observations['action']
+        
+        # 언어 데이터
+        if 'language' in observations:
+            gr00t_data['language'] = observations['language']
+        
+        return gr00t_data
     
     def get_action_from_pipeline(self) -> Dict[str, Any]:
         """

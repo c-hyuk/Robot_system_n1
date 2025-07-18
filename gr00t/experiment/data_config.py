@@ -884,25 +884,33 @@ class DualPiperDataConfig(BaseDataConfig):
     
     # 비디오 키 (우리 하드웨어에 맞춰 설정)
     video_keys = [
-        "video.left_arm_d435",    # 왼쪽 팔 D435 카메라
-        "video.right_arm_d435",   # 오른쪽 팔 D435 카메라  
-        "video.center_zed21",     # 중앙 Zed21 스테레오 카메라
+        "video.right_wrist_view",
+        "video.left_wrist_view",
+        "video.front_view",
     ]
     
-    # 상태 키 (Dual Piper arm 구성)
     state_keys = [
-        "state.left_arm_joint_position",     # 왼쪽 팔 관절 위치 (7 DOF)
-        "state.right_arm_joint_position",    # 오른쪽 팔 관절 위치 (7 DOF)
-        "state.left_arm_effector_position",  # 왼쪽 엔드이펙터 위치/자세 (6 DOF)
-        "state.right_arm_effector_position", # 오른쪽 엔드이펙터 위치/자세 (6 DOF)
+        # Right arm
+        "state.right_arm_eef_pos",     # (3,) - x, y, z in meters
+        "state.right_arm_eef_quat",    # (4,) - quaternion (w, x, y, z)
+        "state.right_gripper_qpos",    # (1,) - gripper position [0, 1]
+        
+        # Left arm  
+        "state.left_arm_eef_pos",      # (3,)
+        "state.left_arm_eef_quat",     # (4,)
+        "state.left_gripper_qpos",     # (1,)
     ]
     
-    # 액션 키 (상태와 동일한 구조)
     action_keys = [
-        "action.left_arm_joint_position",
-        "action.right_arm_joint_position", 
-        "action.left_arm_effector_position",
-        "action.right_arm_effector_position",
+        # Right arm actions
+        "action.right_arm_eef_pos",    # (3,) - target position
+        "action.right_arm_eef_rot",    # (6,) - 6D rotation representation
+        "action.right_gripper_close",  # (1,) - binary command
+        
+        # Left arm actions
+        "action.left_arm_eef_pos",     # (3,)
+        "action.left_arm_eef_rot",     # (6,)
+        "action.left_gripper_close",   # (1,)
     ]
     
     # 언어 키
@@ -912,43 +920,51 @@ class DualPiperDataConfig(BaseDataConfig):
     observation_indices = [0]        # state_horizon = 1 (현재 상태만)
     action_indices = list(range(16)) # action_horizon = 16
     
-    def modality_config(self) -> dict[str, ModalityConfig]:
-        """GR00T 모달리티 설정"""
-        
+
+    # Normalization
+    state_normalization_modes = {
+        "state.right_arm_eef_pos": "min_max",
+        "state.right_gripper_qpos": "min_max",
+        "state.left_arm_eef_pos": "min_max",
+        "state.left_gripper_qpos": "min_max",
+    }
+    state_target_rotations = {
+        "state.right_arm_eef_quat": "rotation_6d",
+        "state.left_arm_eef_quat": "rotation_6d",
+    }
+    action_normalization_modes = {
+        "action.right_gripper_close": "binary",
+        "action.left_gripper_close": "binary",
+    }
+
+    def modality_config(self):
         video_modality = ModalityConfig(
             delta_indices=self.observation_indices,
             modality_keys=self.video_keys,
         )
-        
         state_modality = ModalityConfig(
-            delta_indices=self.observation_indices, 
+            delta_indices=self.observation_indices,
             modality_keys=self.state_keys,
         )
-        
         action_modality = ModalityConfig(
             delta_indices=self.action_indices,
             modality_keys=self.action_keys,
         )
-        
         language_modality = ModalityConfig(
             delta_indices=self.observation_indices,
             modality_keys=self.language_keys,
         )
-        
         modality_configs = {
             "video": video_modality,
             "state": state_modality,
             "action": action_modality,
             "language": language_modality,
         }
-        
         return modality_configs
-    
-    def transform(self) -> ComposedModalityTransform:
-        """GR00T Transform 파이프라인 생성"""
-        
+
+    def transform(self):
         transforms = [
-            # 비디오 변환 (GR00T 표준)
+            # video transforms
             VideoToTensor(apply_to=self.video_keys),
             VideoCrop(apply_to=self.video_keys, scale=0.95),
             VideoResize(apply_to=self.video_keys, height=224, width=224, interpolation="linear"),
@@ -960,48 +976,35 @@ class DualPiperDataConfig(BaseDataConfig):
                 hue=0.08,
             ),
             VideoToNumpy(apply_to=self.video_keys),
-            
-            # 상태 변환
+            # state transforms
             StateActionToTensor(apply_to=self.state_keys),
             StateActionTransform(
                 apply_to=self.state_keys,
-                normalization_modes={
-                    "state.left_arm_joint_position": "min_max",
-                    "state.right_arm_joint_position": "min_max", 
-                    "state.left_arm_effector_position": "min_max",
-                    "state.right_arm_effector_position": "min_max",
-                },
+                normalization_modes=self.state_normalization_modes,
+                target_rotations=self.state_target_rotations,
             ),
-            
-            # 액션 변환
+            # action transforms
             StateActionToTensor(apply_to=self.action_keys),
             StateActionTransform(
                 apply_to=self.action_keys,
-                normalization_modes={
-                    "action.left_arm_joint_position": "min_max",
-                    "action.right_arm_joint_position": "min_max",
-                    "action.left_arm_effector_position": "min_max", 
-                    "action.right_arm_effector_position": "min_max",
-                },
+                normalization_modes=self.action_normalization_modes,
             ),
-            
-            # 연결 변환
+            # concat transforms
             ConcatTransform(
                 video_concat_order=self.video_keys,
                 state_concat_order=self.state_keys,
                 action_concat_order=self.action_keys,
             ),
-            
-            # GR00T 특정 변환
             GR00TTransform(
-                state_horizon=len(self.observation_indices),   # 1
-                action_horizon=len(self.action_indices),       # 16
-                max_state_dim=64,                              # GR00T 표준
-                max_action_dim=32,                             # GR00T 표준
+                state_horizon=len(self.observation_indices),
+                action_horizon=len(self.action_indices),
+                max_state_dim=64,
+                max_action_dim=32,
             ),
         ]
-        
+
         return ComposedModalityTransform(transforms=transforms)
+
 
 ###########################################################################################
 

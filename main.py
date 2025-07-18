@@ -72,8 +72,8 @@ class RobotSystem:
                 left_arm_can_port=args.left_can,
                 right_arm_can_port=args.right_can,
                 enable_safety_checks=not args.disable_safety,
-                emergency_stop_enabled=not args.disable_emergency_stop,
-                enable_performance_monitoring=args.enable_monitoring
+                emergency_stop_enabled=not args.disable_emergency_stop
+                # enable_performance_monitoring=args.enable_monitoring  # 제거: 존재하지 않음
             )
             
             # 2.5. PiperInterface 객체 생성 (DI)
@@ -126,7 +126,7 @@ class RobotSystem:
                 self.logger.warning("⚠️ Hardware not fully ready, continuing anyway...")
             
             # 컨트롤러 시작
-            if self.controller.start_system():
+            if hasattr(self.controller, 'start') and self.controller.start():
                 self.running = True
                 self.logger.info("✅ Robot system started successfully")
                 
@@ -183,7 +183,8 @@ class RobotSystem:
         
         try:
             if self.controller:
-                self.controller.stop_system()
+                if hasattr(self.controller, 'stop'):
+                    self.controller.stop()
             
             self.logger.info("✅ Robot system shutdown complete")
             
@@ -207,23 +208,19 @@ class RobotSystem:
             return
         
         try:
-            state = self.controller.get_system_state()
-            metrics = self.controller.get_performance_metrics()
-            
+            state = getattr(self.controller, 'get_state', lambda: None)()
+            metrics = getattr(self.controller, 'get_metrics', lambda: None)()
             # 성능 경고
-            if state.current_frequency < 8.0:  # 10Hz 목표에서 20% 이하
-                self.logger.warning(f"Low control frequency: {state.current_frequency:.1f}Hz")
-            
-            if state.avg_loop_time > 0.12:  # 120ms 초과
-                self.logger.warning(f"High loop time: {state.avg_loop_time*1000:.1f}ms")
-            
-            if state.error_count > 10:
-                self.logger.warning(f"High error count: {state.error_count}")
-            
-            # 정상 상태 로깅
-            if state.error_count == 0 and state.current_frequency >= 9.0:
-                self.logger.info(f"✅ System healthy: {state.current_frequency:.1f}Hz, "
-                               f"{state.total_commands_sent} commands sent")
+            if state:
+                if getattr(state, 'current_frequency', 10.0) < 8.0:
+                    self.logger.warning(f"Low control frequency: {getattr(state, 'current_frequency', 0):.1f}Hz")
+                if getattr(state, 'avg_loop_time', 0.0) > 0.12:
+                    self.logger.warning(f"High loop time: {getattr(state, 'avg_loop_time', 0)*1000:.1f}ms")
+                if getattr(state, 'error_count', 0) > 10:
+                    self.logger.warning(f"High error count: {getattr(state, 'error_count', 0)}")
+                if getattr(state, 'error_count', 0) == 0 and getattr(state, 'current_frequency', 0) >= 9.0:
+                    self.logger.info(f"✅ System healthy: {getattr(state, 'current_frequency', 0):.1f}Hz, "
+                                   f"{getattr(state, 'total_commands_sent', 0)} commands sent")
                 
         except Exception as e:
             self.logger.error(f"Health check error: {e}")
@@ -250,17 +247,18 @@ class RobotSystem:
         print(f"  Cameras: {list(hw_config.system_config.cameras.keys())}")
         
         # 컨트롤러 설정
-        config = self.controller.config
+        config = getattr(self.controller, 'get_config', lambda: None)()
         print(f"\n🧠 Controller Configuration:")
-        print(f"  Model: {config.model_path}")
-        print(f"  Execution Mode: {config.execution_mode}")
-        print(f"  Safety Checks: {'Enabled' if config.enable_safety_checks else 'Disabled'}")
-        print(f"  Mock Data: {'Yes' if config.use_mock_data else 'No'}")
-        
-        # CAN 포트 정보
-        print(f"\n🔌 CAN Configuration:")
-        print(f"  Left Arm: {config.left_arm_can_port}")
-        print(f"  Right Arm: {config.right_arm_can_port}")
+        if config:
+            print(f"  Model: {getattr(config, 'model_path', '-')}")
+            print(f"  Execution Mode: {getattr(config, 'execution_mode', '-')}")
+            print(f"  Safety Checks: {'Enabled' if getattr(config, 'enable_safety_checks', False) else 'Disabled'}")
+            print(f"  Mock Data: {'Yes' if getattr(config, 'use_mock_data', False) else 'No'}")
+            print(f"\n🔌 CAN Configuration:")
+            print(f"  Left Arm: {getattr(config, 'left_arm_can_port', '-')}")
+            print(f"  Right Arm: {getattr(config, 'right_arm_can_port', '-')}")
+        else:
+            print("  (No config available)")
         
         print("="*60)
         print("🎮 Available Commands:")
