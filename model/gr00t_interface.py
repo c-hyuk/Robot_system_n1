@@ -19,7 +19,7 @@ from gr00t.experiment.data_config import DATA_CONFIG_MAP
 
 # 우리 시스템 import
 from utils.data_types import RobotData
-from data.integrated_pipeline import IntegratedDataPipeline
+from data.unified_data_pipeline import UnifiedDataPipeline
 
 
 class DualPiperGR00TInterface:
@@ -58,7 +58,7 @@ class DualPiperGR00TInterface:
         self._initialize_gr00t_policy(denoising_steps)
         
         # 데이터 파이프라인 (선택적)
-        self.data_pipeline: Optional[IntegratedDataPipeline] = None
+        self.data_pipeline: Optional[UnifiedDataPipeline] = None
         
         # 성능 통계
         self.total_inferences = 0
@@ -110,21 +110,17 @@ class DualPiperGR00TInterface:
         if self.data_pipeline is not None:
             self.logger.warning("Data pipeline already started")
             return True
-        
         try:
-            self.data_pipeline = IntegratedDataPipeline(
+            self.data_pipeline = UnifiedDataPipeline(
                 embodiment_name=self.embodiment_name,
                 use_mock=self.use_mock_data
             )
-            
             success = self.data_pipeline.start()
             if success:
                 self.logger.info("Data pipeline started")
             else:
                 self.logger.error("Failed to start data pipeline")
-            
             return success
-            
         except Exception as e:
             self.logger.error(f"Error starting data pipeline: {e}")
             return False
@@ -253,7 +249,7 @@ class DualPiperGR00TInterface:
         if self.data_pipeline is None:
             self.logger.error("Data pipeline not started")
             return self._get_safe_action()
-        gr00t_input = self.data_pipeline.get_gr00t_input()
+        gr00t_input = self.data_pipeline.get_groot_input()
         if gr00t_input is None:
             self.logger.warning("No data from pipeline")
             return self._get_safe_action()

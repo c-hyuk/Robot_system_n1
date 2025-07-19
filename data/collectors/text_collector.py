@@ -326,12 +326,9 @@ class TextCollectorManager:
     
     def _initialize_collector(self) -> None:
         """수집기 초기화"""
-        if self.use_mock:
-            self.collector = MockTextCollector()
-        else:
-            self.collector = TerminalTextCollector()
-        
-        self.logger.info(f"Initialized text collector: {'Mock' if self.use_mock else 'Terminal'}")
+        # 항상 실제 터미널 입력만 사용 (mock_vision과 무관)
+        self.collector = TerminalTextCollector()
+        self.logger.info(f"Initialized text collector: Terminal (force real input)")
     
     def start_collection(self) -> bool:
         """텍스트 수집 시작"""

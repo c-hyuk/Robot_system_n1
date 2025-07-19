@@ -1,0 +1,24 @@
+{
+	"folders": [
+		{
+			"path": "../../Downloads"
+		},
+		{
+			"name": "rosota_gr00t",
+			"path": ".."
+		},
+		{
+			"path": "../../piper_sdk"
+		},
+		{
+			"path": "../../Isaac-GR00T"
+		},
+		{
+			"path": "../../librealsense"
+		},
+		{
+			"path": "../../Templates"
+		}
+	],
+	"settings": {}
+}

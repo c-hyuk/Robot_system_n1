@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 import numpy as np
 import logging
+import time
 
 from utils.data_types import ActionData
 from config.hardware_config import get_hardware_config
@@ -94,7 +95,6 @@ class DualPiperActionDecoder(BaseActionDecoder):
     
     def decode_action(self, action_tokens: Dict[str, np.ndarray]) -> Dict[str, Any]:
         """액션 토큰을 로봇 명령으로 디코딩"""
-        import time
         start_time = time.time()
         
         try:
