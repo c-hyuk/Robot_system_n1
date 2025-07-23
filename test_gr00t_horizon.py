@@ -17,7 +17,6 @@ import json
 GR00T_N1_2B_PATH = str(Path(__file__).parent.parent / "GR00T-N1-2B")
 sys.path.append(GR00T_N1_2B_PATH)
 sys.path.append(str(Path(__file__).parent))
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "gr00t")))
 
 # GR00T 직접 import (로컬 gr00t 모듈 사용)
 try:
@@ -26,9 +25,11 @@ try:
     from gr00t.data.embodiment_tags import EmbodimentTag
     from gr00t.data.transform.base import ComposedModalityTransform
     from gr00t.experiment.data_config import DATA_CONFIG_MAP
+    from model.action_decoder import create_action_decoder
 except ImportError as e:
     print(f"❌ GR00T Import Error: {e}")
     sys.exit(1)
+
 
 
 def create_horizon_mock_data():
@@ -125,6 +126,58 @@ def test_action_horizon():
             try:
                 action_dict = policy.get_action(device_obs)
                 print(f"  ✅ Direct inference successful")
+                print(f"\n[DEBUG] 전체 action_dict 반환값:")
+                print(action_dict)
+                # === Action horizon별로 action token 출력 (step별 구분) ===
+                if isinstance(action_dict, dict):
+                    # step별 key가 없는 경우 (horizon 차원 분리)
+                    if 'action.right_arm_eef_pos' in action_dict:
+                        batch = 0
+                        horizon = action_dict['action.right_arm_eef_pos'].shape[1]
+                        step_tokens = []
+                        for t in range(horizon):
+                            step_token = {}
+                            for k, v in action_dict.items():
+                                step_token[k] = v[batch, t]
+                            step_tokens.append(step_token)
+                        print(f"\n[DEBUG] step별로 분리된 action token:")
+                        for i, token in enumerate(step_tokens):
+                            print(f"[ACTION TOKEN STEP {i}]")
+                            for k, v in token.items():
+                                print(f"  {k}: {v}")
+                        # === step별로 action decoder에 넣고 커맨드 출력 ===
+                        from model.action_decoder import create_action_decoder
+                        action_decoder = create_action_decoder(embodiment_name)
+                        print(f"\n🚦 Trajectory 실행 시뮬레이션 (step 간격: 0.1초)")
+                        for i, token in enumerate(step_tokens):
+                            trajectory = action_decoder.decode_action(token)
+                            print(f"Step {i}:")
+                            if trajectory:
+                                for arm_name in ['left', 'right']:
+                                    eef_cmd = trajectory[0].get(arm_name)
+                                    if eef_cmd is not None:
+                                        print(f"  {arm_name} EEFCommand: {eef_cmd}")
+                            else:
+                                print("  ⚠️ Trajectory 디코딩 실패 (이 step)")
+                            time.sleep(0.1)
+                        print(f"\n✅ Trajectory 시뮬레이션 완료 (총 {len(step_tokens)} steps)")
+                    else:
+                        # 기존 step별 key가 있는 경우
+                        step_keys = [k for k in action_dict if k.startswith('action_step_')]
+                        if step_keys:
+                            for step_key in sorted(step_keys):
+                                print(f"\n[ACTION TOKEN] {step_key}:")
+                                step_token = action_dict[step_key]
+                                if isinstance(step_token, dict):
+                                    for subk, subv in step_token.items():
+                                        print(f"  {subk}: {subv}")
+                                else:
+                                    print(f"  {step_token}")
+                        else:
+                            # 단일 action
+                            for k, v in action_dict.items():
+                                print(f"[ACTION TOKEN] {k}: {v}")
+                # ===
             except Exception as e:
                 print(f"  ⚠️ Direct inference failed: {e}")
                 import traceback

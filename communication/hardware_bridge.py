@@ -114,10 +114,12 @@ class PiperHardwareBridge:
                 
             self.connected = True
             self.logger.info("Hardware connected successfully")
+            return True
             
         except Exception as e:
             self.logger.error(f"Connection failed: {e}")
             self.connected = False
+            return False
     
     def disconnect(self):
         """로봇 연결 해제"""

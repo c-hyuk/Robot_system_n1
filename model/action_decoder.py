@@ -73,7 +73,30 @@ class DualPiperActionDecoder(BaseActionDecoder):
         Returns: 시간별 EEF 명령 리스트 (각 step은 dict of arm_name: EEFCommand)
         """
         try:
-            # 액션 추출
+            # 1. step token이 arm별 key로 들어온 경우 지원
+            required_keys = [
+                'action.right_arm_eef_pos', 'action.right_arm_eef_rot', 'action.right_gripper_close',
+                'action.left_arm_eef_pos', 'action.left_arm_eef_rot', 'action.left_gripper_close'
+            ]
+            if all(k in action_tokens for k in required_keys):
+                left_action = np.concatenate([
+                    np.array(action_tokens['action.left_arm_eef_pos']).flatten(),
+                    np.array(action_tokens['action.left_arm_eef_rot']).flatten(),
+                    np.array(action_tokens['action.left_gripper_close']).flatten()
+                ])
+                right_action = np.concatenate([
+                    np.array(action_tokens['action.right_arm_eef_pos']).flatten(),
+                    np.array(action_tokens['action.right_arm_eef_rot']).flatten(),
+                    np.array(action_tokens['action.right_gripper_close']).flatten()
+                ])
+                current_time = time.time()
+                cmd_dict = {
+                    'timestamp': current_time,
+                    'left': self._decode_single_arm_eef(left_action, 'left'),
+                    'right': self._decode_single_arm_eef(right_action, 'right')
+                }
+                return [cmd_dict]
+            # 2. 기존 통합 action 처리 (기존 코드 유지)
             if 'action_pred' in action_tokens:
                 actions = action_tokens['action_pred']
             elif 'action' in action_tokens:
