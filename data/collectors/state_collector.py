@@ -17,7 +17,7 @@ import logging
 import argparse
 import os
 import sys
-from scipy.spatial.transform import Rotation as R
+# from scipy.spatial.transform import Rotation as R
 
 # 정상 작동하는 첫 번째/두 번째 파일과 동일한 import 방식 사용
 try:
@@ -497,9 +497,18 @@ class DualArmStateCollectorManager:
         return pos, quat
 
     def _euler_to_quaternion(self, rx, ry, rz):
-        # (라디안 단위) -> (w, x, y, z) 순서
-        quat = R.from_euler('xyz', [rx, ry, rz]).as_quat()  # (x, y, z, w)
-        return np.array([quat[3], quat[0], quat[1], quat[2]], dtype=np.float32)
+        # numpy-only 오일러 → 쿼터니언 (w, x, y, z)
+        cy = np.cos(rz * 0.5)
+        sy = np.sin(rz * 0.5)
+        cp = np.cos(ry * 0.5)
+        sp = np.sin(ry * 0.5)
+        cr = np.cos(rx * 0.5)
+        sr = np.sin(rx * 0.5)
+        w = cr * cp * cy + sr * sp * sy
+        x = sr * cp * cy - cr * sp * sy
+        y = cr * sp * cy + sr * cp * sy
+        z = cr * cp * sy - sr * sp * cy
+        return np.array([w, x, y, z], dtype=np.float32)
 
     def start_all_collectors(self) -> bool:
         """모든 상태 수집기 시작"""

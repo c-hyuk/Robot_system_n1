@@ -32,7 +32,7 @@ class HardwareConfig:
         left_wrist_camera = CameraConfig(
             name="left_wrist_view",  # DualPiperDataConfig와 일치
             width=640, height=480, fps=30,
-            device_id="/dev/video2",  # RealSense 515 첫 번째 카메라의 컬러 스트림 (다른 스트림 시도)
+            device_id="/dev/video2",  # OpenCV Success, 컬러 스트림 확인
             processed_width=224, processed_height=224
         )
         
@@ -40,7 +40,7 @@ class HardwareConfig:
         right_wrist_camera = CameraConfig(
             name="right_wrist_view",  # DualPiperDataConfig와 일치
             width=640, height=480, fps=30,
-            device_id="/dev/video8",  # RealSense 515 두 번째 카메라의 컬러 스트림
+            device_id="/dev/video8",  # OpenCV Success, 컬러 스트림 확인
             processed_width=224, processed_height=224
         )
         
@@ -48,7 +48,7 @@ class HardwareConfig:
         front_camera = CameraConfig(
             name="front_view",  # DualPiperDataConfig와 일치
             width=1344, height=376, fps=15,  # ZED 2i의 실제 지원 해상도
-            device_id="/dev/video14",  # ZED 2i의 메인 스트림
+            device_id="/dev/video12",  # ZED 2i, OpenCV Success, 컬러 스트림 확인
             processed_width=224, processed_height=224
         )
         

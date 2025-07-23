@@ -14,85 +14,59 @@
 # limitations under the License.
 
 import random
-import re
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 import torch
-import tree
-from einops import rearrange
-from PIL import Image
 from pydantic import Field, PrivateAttr
-from transformers import AutoProcessor, ProcessorMixin
 from transformers.data.data_collator import DataCollatorMixin
-from transformers.feature_extraction_utils import BatchFeature
 
-from gr00t.data.embodiment_tags import EMBODIMENT_TAG_MAPPING, EmbodimentTag
-from gr00t.data.schema import DatasetMetadata
+from gr00t.data.schema import DatasetMetadata, EmbodimentTag
 from gr00t.data.transform.base import InvertibleModalityTransform
+from gr00t.model.backbone.eagle2_hg_model.inference_eagle_repo import EagleProcessor
 
-from .backbone.eagle_backbone import DEFAULT_EAGLE_PATH
-
-
-def formalize_language(language: str) -> str:
-    """
-    1. Force lowercase
-    2. Remove all punctuations
-    """
-    language = language.lower()
-    language = re.sub(r"[^\w\s]", "", language)
-    return language
+DEFAULT_SYSTEM_MESSAGE = "You are a helpful assistant."
+EAGLE_KEYS = ["pixel_values", "input_ids", "attention_mask"]
 
 
-def build_eagle_processor(eagle_path: str) -> ProcessorMixin:
-    eagle_processor = AutoProcessor.from_pretrained(
-        eagle_path, trust_remote_code=True, use_fast=True
-    )
-    eagle_processor.tokenizer.padding_side = "left"
-    return eagle_processor
-
-
-def collate(features: List[dict], eagle_processor) -> dict:
+def collate_gr00t(features: List[dict], processor) -> dict:
     batch = {}
     keys = features[0].keys()
+    assert all(
+        all(key in feature for key in keys) for feature in features
+    ), "All features must have the same keys."
 
     for key in keys:
         values = [elem[key] for elem in features]
-
-        if key == "eagle_content":
-            text_list = []
-            image_inputs = []
-            for v in values:
-                curr_text_list = v["text_list"]
-                curr_image_inputs = v["image_inputs"]
-                text_list += curr_text_list
-                image_inputs += curr_image_inputs
-            eagle_inputs = eagle_processor(
-                text=text_list, images=image_inputs, return_tensors="pt", padding=True
-            )
-            for k, v in eagle_inputs.items():
-                k = "eagle_" + k
-                batch[k] = v
-        elif key in ("pixel_values", "image_grid_thw", "attention_mask", "input_ids"):
-            # Concat in existing batch dimension.
-            batch[key] = torch.cat(values)
-        else:
+        if key not in EAGLE_KEYS:
             # state, state_mask, action and action_mask.
             # Stack to form the batch dimension.
             batch[key] = torch.from_numpy(np.stack(values))
+
+    vlm_batch = processor.collate_fn(features)
+    # merge vlm_batch with batch
+    for key in vlm_batch.keys():
+        assert key not in batch, f"Key {key} already exists in batch."
+        batch[key] = vlm_batch[key]
+
     return batch
 
 
-class DefaultDataCollator(DataCollatorMixin):
-    def __init__(self, eagle_path: str = DEFAULT_EAGLE_PATH):
-        super().__init__()
-        self.eagle_processor = build_eagle_processor(eagle_path)
+class DefaultDataCollatorGR00T(DataCollatorMixin):
+    def __init__(self, processor, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.processor = processor
 
-    def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
-        return collate(features, self.eagle_processor)
+    def __call__(self, features: List[Dict[str, Any]], return_tensors=None) -> Dict[str, Any]:
+        return collate_gr00t(features, self.processor)
 
 
 class GR00TTransform(InvertibleModalityTransform):
+    _EMBODIMENT_TAG_MAPPING = {
+        "gr1": 24,
+        "dual_piper_arm": 25,  # 추가: dual_piper_arm에 projector index 25 할당
+        "new_embodiment": 31,  # use the last projector for new embodiment,
+    }
 
     # -- We inherit from ModalityTransform, so we keep apply_to as well --
     apply_to: list[str] = Field(
@@ -101,10 +75,9 @@ class GR00TTransform(InvertibleModalityTransform):
     training: bool = Field(
         default=True, description="Whether to apply the transform in training mode."
     )
-    formalize_language: bool = Field(default=False, description="Formalize language if True.")
     embodiment_tag_mapping: dict[str, int] = Field(
         description="The projector index of each embodiment tag.",
-        default=EMBODIMENT_TAG_MAPPING,
+        default=_EMBODIMENT_TAG_MAPPING,
     )
     language_dropout_prob: float = Field(
         default=0.0,
@@ -114,12 +87,11 @@ class GR00TTransform(InvertibleModalityTransform):
     # Private attributes to keep track of shapes/dimensions across apply/unapply
     _language_key: Optional[list[str]] = PrivateAttr(default=None)
 
-    eagle_processor: ProcessorMixin = Field(default=build_eagle_processor(DEFAULT_EAGLE_PATH))
-
     # XEmbDiT arguments
     default_instruction: str = Field(default="Perform the default behavior.")
     max_state_dim: int
     max_action_dim: int
+    vlm_processor: EagleProcessor = Field(default=EagleProcessor())
     state_horizon: int
     action_horizon: int
 
@@ -141,12 +113,13 @@ class GR00TTransform(InvertibleModalityTransform):
     def check_keys_and_batch_size(self, data):
         grouped_keys = {}
         for key in data.keys():
-            if "annotation" in key:
-                modality = "language"
-            else:
-                try:
-                    modality, _ = key.split(".")
-                except:  # noqa: E722
+            try:
+                modality, _ = key.split(".")
+            except:  # noqa: E722
+                ### Handle language annotation special case
+                if "annotation" in key:
+                    modality = "language"
+                else:
                     modality = "others"  # will contain the video, state, and action
             if modality not in grouped_keys:
                 grouped_keys[modality] = []
@@ -169,58 +142,39 @@ class GR00TTransform(InvertibleModalityTransform):
             self._language_key = language_keys[0]
         return is_batched, batch_size
 
-    def _apply_vlm_processing(self, batch: dict) -> BatchFeature:
+    def _apply_gr00t_processing(self, batch: dict) -> dict:
         """
         Args:
             batch:
-                video: [V, T, C, H, W]
-        Returns: required input with the format `BatchFeature`
+                video: [T, V, H, W, C]
         """
-        # TODO(YL, FH): check if this is correct
-        images = batch["images"]  # [V, T, C, H, W]
-        images.shape[0]
+        images = batch["images"]
+        assert images.shape[0] == 1, "double check formatting when doing multi-time step"
+        # Remove the singleton time dimension.
+        images = images[0]
+        images = [{"np_array": images[idx]} for idx in range(len(images))]
+        if "language" in batch:
+            lang = batch["language"]
+            if isinstance(lang, list):
+                lang = lang[0]
+        else:
+            lang = self.default_instruction
+            raise ValueError("Language not found for {self.embodiment_tag.value}")
 
-        np_images = rearrange(images, "v t c h w -> (t v) c h w")
-        text_content = []
-
-        # handle language
-        lang = batch["language"]
-        if isinstance(lang, list):
-            lang = lang[0]
-        text_content.append({"type": "text", "text": lang})
-
-        eagle_images = [Image.fromarray(np.transpose(v, (1, 2, 0))) for v in np_images]
-        eagle_image = [{"type": "image", "image": img} for img in eagle_images]
-        eagle_conversation = [
+        prompt = [
+            {"role": "system", "content": DEFAULT_SYSTEM_MESSAGE},
             {
                 "role": "user",
-                "content": eagle_image + text_content,
-            }
+                "content": lang,
+                "image": images,
+            },
         ]
-
-        text_list = [
-            self.eagle_processor.apply_chat_template(
-                eagle_conversation, tokenize=False, add_generation_prompt=True
-            )
-        ]
-        image_inputs, video_inputs = self.eagle_processor.process_vision_info(eagle_conversation)
-        eagle_content = {
-            "image_inputs": image_inputs,
-            "video_inputs": video_inputs,
-            "text_list": text_list,
-        }
-        inputs = {}
-        inputs["eagle_content"] = eagle_content
+        inputs = self.vlm_processor.prepare_input({"prompt": prompt})
         return inputs
 
     def _prepare_video(self, data: dict):
         """Process, stack, and pad images from data['video']."""
-        ## TODO(YL, FH): check if this is correct
-        images = rearrange(
-            data["video"],
-            "t v h w c -> v t c h w",
-        )
-        return images
+        return data["video"]  # [t v h w c]
 
     def _prepare_language(self, data: dict):
         """Tokenize data['language'] (or default_instruction if missing)."""
@@ -235,6 +189,7 @@ class GR00TTransform(InvertibleModalityTransform):
                     raw_language = self.default_instruction
         else:
             raw_language = self.default_instruction
+
         return raw_language
 
     def _prepare_state(self, data: dict):
@@ -305,8 +260,9 @@ class GR00TTransform(InvertibleModalityTransform):
         images = self._prepare_video(data)
         images = images.astype(np.uint8)
         language = self._prepare_language(data)
-        batch_data = {"images": images, "language": language}
-        vlm_outputs = self._apply_vlm_processing(batch_data)
+
+        vlm_batch = {"images": images, "language": language}
+        vlm_outputs = self._apply_gr00t_processing(vlm_batch)
 
         # 2) Prepare state
         state, state_mask, _ = self._prepare_state(data)
@@ -326,6 +282,7 @@ class GR00TTransform(InvertibleModalityTransform):
             assert k not in transformed_data, f"Key {k} already exists in transformed_data."
             transformed_data[k] = v
 
+        # By default, assume regular robot data with only real action.
         transformed_data["embodiment_id"] = self.get_embodiment_tag()
 
         if self.training:
@@ -339,10 +296,26 @@ class GR00TTransform(InvertibleModalityTransform):
 
     def apply_batch(self, data: dict, batch_size: int) -> dict:
         # Split on batch dimension.
-        data_split = [tree.map_structure(lambda x: x[i], data) for i in range(batch_size)]
+        data_split = []
+        for i in range(batch_size):
+            single_data = {}
+            for key, value in data.items():
+                # Special handling for string values to prevent character-wise splitting
+                if isinstance(value, str):
+                    # For string values, keep the entire string instead of indexing
+                    single_data[key] = value
+                else:
+                    # For arrays and other data types, extract the i-th element
+                    try:
+                        single_data[key] = value[i]
+                    except (TypeError, IndexError):
+                        # If value is not indexable or index is out of bounds, use the whole value
+                        single_data[key] = value
+            data_split.append(single_data)
+
         # Process each element.
         data_split_processed = [self.apply_single(elem) for elem in data_split]
-        return collate(data_split_processed, self.eagle_processor)
+        return collate_gr00t(data_split_processed, self.vlm_processor)
 
     def apply(self, data: dict) -> dict:
         is_batched, batch_size = self.check_keys_and_batch_size(data)

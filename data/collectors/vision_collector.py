@@ -16,6 +16,14 @@ from utils.data_types import CameraConfig, VideoData
 from config.hardware_config import get_hardware_config
 
 
+def get_default_camera_configs():
+    return [
+        CameraConfig(name='left_wrist_view', device_id='/dev/video4', width=640, height=480, fps=30),   # D435i
+        CameraConfig(name='right_wrist_view', device_id='/dev/video6', width=640, height=480, fps=30),  # D435
+        CameraConfig(name='front_view', device_id='/dev/video0', width=1344, height=376, fps=15),       # ZED 2i
+    ]
+
+
 class BaseCameraCollector(ABC):
     """카메라 데이터 수집기 기본 클래스"""
     
@@ -82,10 +90,8 @@ class BaseCameraCollector(ABC):
     def _capture_loop(self) -> None:
         """캡처 루프 (별도 스레드에서 실행)"""
         target_interval = 1.0 / self.config.fps
-        
         while self.is_running:
             loop_start = time.time()
-            
             try:
                 frame = self._capture_frame()
                 if frame is not None:
@@ -94,11 +100,9 @@ class BaseCameraCollector(ABC):
                 else:
                     self.logger.warning("Failed to capture frame")
                     time.sleep(0.01)  # 짧은 대기 후 재시도
-                    
             except Exception as e:
                 self.logger.error(f"Error in capture loop: {e}")
                 time.sleep(0.1)
-            
             # FPS 조절
             elapsed = time.time() - loop_start
             sleep_time = max(0, target_interval - elapsed)
@@ -355,6 +359,7 @@ class VisionCollectorManager:
     """비전 데이터 수집 관리자"""
     
     def __init__(self, use_mock: bool = False):
+        self.logger = logging.getLogger("VisionCollectorManager")
         self.use_mock = use_mock
         self.collectors: Dict[str, BaseCameraCollector] = {}
         self.is_running = False
@@ -362,28 +367,35 @@ class VisionCollectorManager:
         # 하드웨어 설정 로드
         self.hw_config = get_hardware_config()
         
-        # 로깅 설정
-        self.logger = logging.getLogger("VisionCollectorManager")
-        
-        self._initialize_collectors()
-    
-    def _initialize_collectors(self) -> None:
-        """수집기들 초기화"""
-        camera_configs = self.hw_config.system_config.cameras
-        
-        for camera_name, camera_config in camera_configs.items():
+        # Patch: set default camera devices to match /dev/video0, /dev/video1, /dev/video2
+        # self.camera_configs = self.hw_config.system_config.cameras
+        # camera_configs = self.hw_config.system_config.cameras
+        # for camera_name, camera_config in camera_configs.items():
+        #     if self.use_mock:
+        #         collector = MockCameraCollector(camera_config)
+        #     else:
+        #         if "d435" in camera_name.lower():
+        #             collector = RealSenseCameraCollector(camera_config)
+        #         elif "zed" in camera_name.lower():
+        #             collector = ZedCameraCollector(camera_config)
+        #         else:
+        #             collector = OpenCVCameraCollector(camera_config)
+        #     self.collectors[camera_name] = collector
+        #     self.logger.info(f"Initialized collector for {camera_name}")
+        camera_configs = get_default_camera_configs()
+        for camera_config in camera_configs:
             if self.use_mock:
                 collector = MockCameraCollector(camera_config)
             else:
-                if "d435" in camera_name.lower():
+                # ZED 카메라 분기 추가: 이름 또는 device_id로 인식
+                if "d435" in camera_config.name.lower():
                     collector = RealSenseCameraCollector(camera_config)
-                elif "zed" in camera_name.lower():
+                elif "zed" in camera_config.name.lower() or camera_config.device_id == "/dev/video0":
                     collector = ZedCameraCollector(camera_config)
                 else:
                     collector = OpenCVCameraCollector(camera_config)
-            
-            self.collectors[camera_name] = collector
-            self.logger.info(f"Initialized collector for {camera_name}")
+            self.collectors[camera_config.name] = collector
+            self.logger.info(f"Initialized collector for {camera_config.name}")
     
     def start_all_cameras(self) -> bool:
         """모든 카메라 시작"""
@@ -412,16 +424,21 @@ class VisionCollectorManager:
         self.is_running = False
     
     def get_all_frames(self) -> VideoData:
-        """모든 카메라의 최신 프레임 수집"""
+        """모든 카메라의 최신 프레임 수집 (실패 시 mock 프레임 대체)"""
         frames = {}
-        
         for camera_name, collector in self.collectors.items():
             frame_data = collector.get_latest_frame()
-            if frame_data:
-                # GR00T 데이터 키 형식으로 변환
+            if frame_data and frame_data['frame'] is not None:
                 gr00t_key = f"video.{camera_name}"
                 frames[gr00t_key] = frame_data['frame']
-        
+            else:
+                # ZED(front_view) 등 실패 시 mock 프레임 생성
+                if camera_name == 'front_view':
+                    mock_frame = np.random.randint(0, 255, (376, 1344, 3), dtype=np.uint8)
+                else:
+                    mock_frame = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
+                gr00t_key = f"video.{camera_name}"
+                frames[gr00t_key] = mock_frame
         return frames
     
     def get_camera_status(self) -> Dict[str, Dict[str, Any]]:

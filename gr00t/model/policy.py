@@ -27,7 +27,7 @@ from gr00t.data.dataset import ModalityConfig
 from gr00t.data.embodiment_tags import EmbodimentTag
 from gr00t.data.schema import DatasetMetadata
 from gr00t.data.transform.base import ComposedModalityTransform
-from gr00t.model.gr00t_n1 import GR00T_N1_5
+from gr00t.model.gr00t_n1 import GR00T_N1
 
 COMPUTE_DTYPE = torch.bfloat16
 
@@ -147,15 +147,35 @@ class Gr00tPolicy(BasePolicy):
         """
         Make a prediction with the model.
         Args:
-            observations (Dict[str, Any]): The observation to use for prediction.
+            obs (Dict[str, Any]): The observation to make a prediction for.
+
+        e.g. obs = {
+            "video.<>": np.ndarray,  # (T, H, W, C)
+            "state.<>": np.ndarray, # (T, D)
+        }
+
+        or with batched input:
+        e.g. obs = {
+            "video.<>": np.ndarray,, # (B, T, H, W, C)
+            "state.<>": np.ndarray, # (B, T, D)
+        }
+
         Returns:
             Dict[str, Any]: The predicted action.
         """
+        # let the get_action handles both batch and single input
+        is_batch = self._check_state_is_batched(observations)
+        if not is_batch:
+            observations = unsqueeze_dict_values(observations)
+
+        normalized_input = unsqueeze_dict_values
+        # Apply transforms
         normalized_input = self.apply_transforms(observations)
+
         normalized_action = self._get_action_from_normalized_input(normalized_input)
         unnormalized_action = self._get_unnormalized_action(normalized_action)
 
-        if not self._check_state_is_batched(observations):
+        if not is_batch:
             unnormalized_action = squeeze_dict_values(unnormalized_action)
         return unnormalized_action
 
@@ -211,60 +231,28 @@ class Gr00tPolicy(BasePolicy):
         return True
 
     def _load_model(self, model_path):
-        model = GR00T_N1_5.from_pretrained(model_path, torch_dtype=COMPUTE_DTYPE)
+        model = GR00T_N1.from_pretrained(model_path, torch_dtype=COMPUTE_DTYPE)
         model.eval()  # Set model to eval mode
         model.to(device=self.device)  # type: ignore
-
-        # Update action_horizon to match modality config
-        # Get the expected action horizon from the modality config
-        expected_action_horizon = len(self._modality_config["action"].delta_indices)
-
-        if expected_action_horizon != model.action_head.config.action_horizon:
-            print(
-                f"Policy: Recreating action head with action_horizon {expected_action_horizon} (was {model.action_head.config.action_horizon})"
-            )
-
-            # Update the action head config
-            new_action_head_config = model.action_head.config
-            new_action_head_config.action_horizon = expected_action_horizon
-
-            # Import the FlowmatchingActionHead class
-            from gr00t.model.action_head.flow_matching_action_head import (
-                FlowmatchingActionHead,
-            )
-
-            # Create new action head with updated config
-            new_action_head = FlowmatchingActionHead(new_action_head_config)
-
-            # Copy the weights from the old action head to the new one
-            new_action_head.load_state_dict(model.action_head.state_dict(), strict=False)
-
-            # Replace the action head
-            model.action_head = new_action_head
-
-            # Update model config AND the action_head_cfg dictionary that gets saved
-            model.config.action_horizon = expected_action_horizon
-            model.action_horizon = expected_action_horizon
-            model.config.action_head_cfg["action_horizon"] = expected_action_horizon
 
         self.model = model
 
     def _load_metadata(self, exp_cfg_dir: Path):
         """Load the transforms for the model."""
-        # Load metadata for normalization stats
-        metadata_path = exp_cfg_dir / "metadata.json"
+        import json
+        import os
+        metadata_path = os.path.join(exp_cfg_dir, "metadata.json")
+        print(f"[DEBUG] _load_metadata: loading from {metadata_path}")
+        print(f"[DEBUG] _load_metadata: embodiment_tag = {self.embodiment_tag}")
         with open(metadata_path, "r") as f:
             metadatas = json.load(f)
+        print(f"[DEBUG] _load_metadata: embodiment_tags keys = {list(metadatas.get('embodiment_tags', {}).keys())}")
+        meta_dict = metadatas.get("embodiment_tags", {}).get(self.embodiment_tag.value)
+        if meta_dict is None:
+            raise ValueError((f"No metadata found for embodiment tag: {self.embodiment_tag}",
+                              f"make sure the metadata.json file is present at {metadata_path}"))
 
-        # Get metadata for the specific embodiment
-        metadata_dict = metadatas["embodiment_tags"].get(self.embodiment_tag.value)
-        if metadata_dict is None:
-            raise ValueError(
-                f"No metadata found for embodiment tag: {self.embodiment_tag.value}",
-                f"make sure the metadata.json file is present at {metadata_path}",
-            )
-
-        metadata = DatasetMetadata.model_validate(metadata_dict)
+        metadata = DatasetMetadata.model_validate(meta_dict)
 
         self._modality_transform.set_metadata(metadata)
         self.metadata = metadata
@@ -313,8 +301,6 @@ def unsqueeze_dict_values(data: Dict[str, Any]) -> Dict[str, Any]:
     for k, v in data.items():
         if isinstance(v, np.ndarray):
             unsqueezed_data[k] = np.expand_dims(v, axis=0)
-        elif isinstance(v, list):
-            unsqueezed_data[k] = np.array(v)
         elif isinstance(v, torch.Tensor):
             unsqueezed_data[k] = v.unsqueeze(0)
         else:

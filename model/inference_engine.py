@@ -14,7 +14,7 @@ import numpy as np
 import torch
 
 from model.gr00t_interface import DualPiperGR00TInterface
-from data.integrated_pipeline import IntegratedDataPipeline
+from data.unified_data_pipeline import UnifiedDataPipeline
 
 
 class InferenceState(Enum):

@@ -140,20 +140,38 @@ class ModalityConverter:
             modality_data = ModalityData()
             modality_data.timestamp = robot_data.timestamp
             
-            # 1. 상태 데이터 변환
+            # 1. 상태 데이터 변환 (DualPiperDataConfig 형식에 맞춤)
+            # state.xxx 키들을 하나의 벡터로 합쳐 (1, 20) shape의 'state'로 제공
             if robot_data.has_state_data() and robot_data.state_data is not None:
-                for key, data in robot_data.state_data.items():
-                    if isinstance(data, np.ndarray) and data.size > 0:
-                        modality_data.add_modality(key, data)
+                state_keys = [
+                    'state.left_arm_eef_pos',
+                    'state.left_arm_eef_quat',
+                    'state.left_gripper_qpos',
+                    'state.right_arm_eef_pos',
+                    'state.right_arm_eef_quat',
+                    'state.right_gripper_qpos',
+                ]
+                state_vecs = []
+                for key in state_keys:
+                    arr = robot_data.state_data.get(key)
+                    if arr is not None:
+                        state_vecs.append(arr)
+                if state_vecs:
+                    state_vector = np.concatenate(state_vecs, axis=0)
+                    modality_data.add_modality('state', state_vector[None, :])  # (1, 20)
             
-            # 2. 비전 데이터 변환
+            # 2. 비전 데이터 변환 (DualPiperDataConfig의 video_keys 형식)
             if robot_data.has_video_data() and robot_data.video_data is not None:
                 for camera_id, frame in robot_data.video_data.items():
                     if isinstance(frame, np.ndarray) and frame.size > 0:
-                        vision_key = f"observation.image.{camera_id}"
-                        modality_data.add_modality(vision_key, frame)
+                        if camera_id in ['right_wrist_view', 'left_wrist_view', 'front_view']:
+                            vision_key = f"video.{camera_id}"
+                            modality_data.add_modality(vision_key, frame)
+                        else:
+                            vision_key = f"observation.image.{camera_id}"
+                            modality_data.add_modality(vision_key, frame)
             
-            # 3. 언어 데이터 변환
+            # 3. 언어 데이터 변환 (DualPiperDataConfig의 language_keys 형식)
             if robot_data.has_language_data() and robot_data.language_data is not None:
                 instruction = robot_data.language_data.get("annotation.language.instruction", "")
                 if instruction and isinstance(instruction, str) and instruction.strip():
@@ -427,7 +445,18 @@ class GR00TTransformLayer:
         self.config = DATA_CONFIG_MAP[embodiment_name]
         self.modality_config = self.config.modality_config()
         self.transform_pipeline = self.config.transform()
-        
+        # metadata.json 로드 및 set_metadata 적용
+        import os, json
+        from gr00t.data.schema import DatasetMetadata
+        exp_cfg_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../experiment_cfg")
+        metadata_path = os.path.join(exp_cfg_dir, "metadata.json")
+        if os.path.exists(metadata_path):
+            with open(metadata_path, "r") as f:
+                metadatas = json.load(f)
+            meta_dict = metadatas.get(embodiment_name)
+            if meta_dict is not None:
+                metadata = DatasetMetadata.model_validate(meta_dict)
+                self.transform_pipeline.set_metadata(metadata)
         self.logger = logging.getLogger("GR00TTransformLayer")
     
     def apply_transform(self, modality_data: ModalityData) -> Optional[Dict[str, Any]]:

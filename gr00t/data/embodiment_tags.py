@@ -22,16 +22,6 @@ class EmbodimentTag(Enum):
     The GR1 dataset.
     """
 
-    OXE_DROID = "oxe_droid"
-    """
-    The OxE Droid dataset.
-    """
-
-    AGIBOT_GENIE1 = "agibot_genie1"
-    """
-    The AgiBot Genie-1 with gripper dataset.
-    """
-
     NEW_EMBODIMENT = "new_embodiment"
     """
     Any new embodiment for finetuning.
@@ -39,15 +29,5 @@ class EmbodimentTag(Enum):
 
     DUAL_PIPER_ARM = "dual_piper_arm"
     """
-    Dual Piper Arm custom robot embodiment.
+    Dual Piper Arm 데이터 설정
     """
-
-
-# Embodiment tag string: to projector index in the Action Expert Module
-EMBODIMENT_TAG_MAPPING = {
-    EmbodimentTag.NEW_EMBODIMENT.value: 31,
-    EmbodimentTag.OXE_DROID.value: 17,
-    EmbodimentTag.AGIBOT_GENIE1.value: 26,
-    EmbodimentTag.GR1.value: 24,
-    EmbodimentTag.DUAL_PIPER_ARM.value: 99,  # Custom index for Dual Piper Arm
-}
